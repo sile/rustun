@@ -1,0 +1,13 @@
+[package]
+name = "rustun"
+version = "0.1.0"
+authors = ["Takeru Ohta <phjgt308@gmail.com>"]
+
+[dependencies]
+fibers = "0.1"
+futures = "0.1"
+rand = "0.3"
+byteorder = "1"
+
+[dev-dependencies]
+clap = "2"
