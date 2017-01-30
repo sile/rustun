@@ -11,6 +11,8 @@ pub const DEFAULT_TLS_PORT: u16 = 5349;
 
 pub const MAGIC_COOKIE: u32 = 0x2112A442;
 
+pub const DEFAULT_MAX_MESSAGE_SIZE: usize = 568;
+
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct U12(u16);
 impl U12 {
