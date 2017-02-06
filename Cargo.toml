@@ -8,6 +8,7 @@ fibers = "0.1"
 futures = "0.1"
 rand = "0.3"
 byteorder = "1"
+error-chain = "0.8"
 
 [dev-dependencies]
 clap = "2"

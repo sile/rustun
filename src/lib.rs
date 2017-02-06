@@ -2,6 +2,8 @@ extern crate rand;
 extern crate fibers;
 extern crate futures;
 extern crate byteorder;
+#[macro_use]
+extern crate error_chain;
 
 pub mod client;
 pub mod server;
@@ -166,6 +168,12 @@ impl AttrType {
     }
     pub fn is_comprehension_required(&self) -> bool {
         self.as_u16() < 0x8000
+    }
+}
+
+error_chain!{
+    foreign_links {
+        Io(std::io::Error);
     }
 }
 
