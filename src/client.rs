@@ -115,6 +115,18 @@ impl<M, A, C> Call<M, A, C>
         Call(CallInner::Failed(error))
     }
 }
+impl<M, A, C> Future for Call<M, A, C>
+    where M: StunMethod,
+          A: Attribute,
+          C: TransportChannel<M, A>
+{
+    type Item = (Client<M, A, C>, Message<M, A>);
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        self.0.poll()
+    }
+}
+
 
 pub enum CallInner<M, A, C>
     where M: StunMethod,
@@ -153,6 +165,7 @@ impl<M, A, C> Future for CallInner<M, A, C>
                     }
                     Async::Ready(None) => Err(ErrorKind::ChannelDisconnected.into()),
                     Async::Ready(Some(m)) => {
+                        let m = m?;
                         if m.transaction_id() != transaction_id {
                             *self = CallInner::Recv(c, transaction_id);
                             self.poll()
