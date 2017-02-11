@@ -6,9 +6,10 @@ use byteorder::{ByteOrder, BigEndian};
 use futures::{Future, Async, Poll};
 use handy_async::io::{AsyncRead, AsyncWrite};
 use handy_async::io::futures::{ReadExact, WriteAll};
+use failure::Failure;
 
 use MAGIC_COOKIE;
-use {StunMethod, Result, ResultExt, ErrorKind, Error};
+use {StunMethod, Result, Error};
 use types::U12;
 use attribute::Attribute;
 
@@ -16,8 +17,7 @@ macro_rules! async_chain_err {
     ($e:expr, $m:expr) => {
         $e.map_err(|e| {
             let (stream, error) = e.map_state(|s| s.0).unwrap();
-            let temp_result: ::std::result::Result<(), _> = Err(error);
-            (stream, temp_result.chain_err(|| $m).err().unwrap())
+            (stream, may_fail!(Err(Error::from(error)) as Result<()>).unwrap_err())
         })
     }
 }
@@ -49,13 +49,12 @@ impl<W, M, A> Future for WriteMessage<W, M, A>
     type Item = W;
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.future
+        may_fail!(self.future
             .as_mut()
             .map_err(|e| e.take().unwrap())?
             .poll()
             .map(|ready| ready.map(|(w, _)| w))
-            .map_err(|e| e.into_error())
-            .chain_err(|| "Cannot write STUN message")
+            .map_err(|e| Failure::new(e.into_error()).into()))
     }
 }
 
@@ -95,7 +94,7 @@ impl<R, M, A> Future for ReadMessageInner<R, M, A>
                     // type
                     let message_type = BigEndian::read_u16(&bytes[0..2]);
                     let message_type = match Type::from_u16(message_type) {
-                        Err(e) => bail!((reader, e)),
+                        Err(e) => return Err((reader, e)),
                         Ok(t) => t,
                     };
 
@@ -105,7 +104,7 @@ impl<R, M, A> Future for ReadMessageInner<R, M, A>
                     // cookie
                     let magic_cookie = BigEndian::read_u32(&bytes[4..8]);
                     if magic_cookie != MAGIC_COOKIE {
-                        bail!((reader, ErrorKind::UnexpectedMagicCookie(magic_cookie).into()));
+                        return Err((reader, Error::UnexpectedMagicCookie(magic_cookie)));
                     }
 
                     // transaction id
@@ -133,7 +132,7 @@ impl<R, M, A> Future for ReadMessageInner<R, M, A>
                     let mut attrs_reader = bytes.take(bytes_len as u64);
                     while attrs_reader.limit() > 0 {
                         match A::read_from(&mut attrs_reader) {
-                            Err(e) => bail!((reader, e)),
+                            Err(e) => return Err((reader, e)),
                             Ok(a) => message.add_attribute(a),
                         }
                     }
@@ -275,7 +274,7 @@ impl<M: StunMethod> Type<M> {
         let method = (value & 0b0000_0000_1111) | ((value >> 1) & 0b0000_0111_0000) |
                      ((value >> 2) & 0b1111_1000_0000);
         let method = U12::from_u16(method).unwrap();
-        let method = M::from_u12(method).ok_or(ErrorKind::UnknownMethod(method))?;
+        let method = M::from_u12(method).ok_or(Error::UnknownMethod(method))?;
         Ok(Type {
             class: class,
             method: method,
@@ -313,9 +312,7 @@ impl Class {
         }
     }
     pub fn expect(&self, expected: Class) -> Result<()> {
-        if *self != expected {
-            bail!(ErrorKind::UnexpectedClass(*self, expected));
-        }
+        fail_if!(*self != expected, Error::UnexpectedClass(*self, expected))?;
         Ok(())
     }
 }

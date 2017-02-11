@@ -5,6 +5,7 @@ use message;
 pub use self::attribute::Attribute;
 
 pub mod attribute;
+pub mod attributes;
 
 pub type Message = message::Message<Method, Attribute>;
 

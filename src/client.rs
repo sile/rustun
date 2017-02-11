@@ -1,7 +1,7 @@
 use std::mem;
 use futures::{Future, Poll, Sink, AsyncSink, Async, Stream};
 
-use {Error, StunMethod, ErrorKind};
+use {Error, StunMethod};
 use attribute::Attribute;
 use message::{Message, Class, TransactionId};
 use transport::TransportChannel;
@@ -32,7 +32,7 @@ impl<M, A, C> Client<M, A, C>
             let transaction_id = message.transaction_id();
             match self.tx.start_send(message) {
                 Err(e) => Call::failed(e),
-                Ok(AsyncSink::NotReady(_)) => Call::failed(ErrorKind::ChannelFull.into()),
+                Ok(AsyncSink::NotReady(_)) => Call::failed(Error::ChannelFull.into()),
                 Ok(AsyncSink::Ready) => Call::new(self, transaction_id),
             }
         }
@@ -43,7 +43,7 @@ impl<M, A, C> Client<M, A, C>
         } else {
             match self.tx.start_send(message) {
                 Err(e) => Cast::failed(e),
-                Ok(AsyncSink::NotReady(_)) => Cast::failed(ErrorKind::ChannelFull.into()),
+                Ok(AsyncSink::NotReady(_)) => Cast::failed(Error::ChannelFull.into()),
                 Ok(AsyncSink::Ready) => Cast::new(self),
             }
         }
@@ -163,14 +163,14 @@ impl<M, A, C> Future for CallInner<M, A, C>
                         *self = CallInner::Recv(c, transaction_id);
                         Ok(Async::NotReady)
                     }
-                    Async::Ready(None) => Err(ErrorKind::ChannelDisconnected.into()),
+                    Async::Ready(None) => Err(Error::ChannelDisconnected.into()),
                     Async::Ready(Some(m)) => {
                         let m = m?;
                         if m.transaction_id() != transaction_id {
                             *self = CallInner::Recv(c, transaction_id);
                             self.poll()
                         } else if !m.class().is_response() {
-                            Err(ErrorKind::NotResponse(m.class()).into())
+                            Err(Error::NotResponse(m.class()).into())
                         } else {
                             Ok(Async::Ready((c, m)))
                         }

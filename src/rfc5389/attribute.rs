@@ -1,11 +1,12 @@
 use std::io::{Read, Write};
 use std::net::SocketAddr;
-use byteorder::BigEndian;
-use byteorder::ReadBytesExt;
+use failure::Failure;
 
 use MAGIC_COOKIE;
 use attribute;
-use {Result, ErrorKind};
+use AttributeType;
+use {Result, Error};
+use io::ReadExt;
 
 pub const TYPE_XOR_MAPPED_ADDRESS: u16 = 0x0020;
 
@@ -14,17 +15,18 @@ pub enum Attribute {
     XorMappedAddress(XorMappedAddress),
 }
 impl attribute::Attribute for Attribute {
-    fn get_type(&self) -> u16 {
-        match *self {
-            Attribute::XorMappedAddress(_) => TYPE_XOR_MAPPED_ADDRESS,
-        }
+    fn get_type(&self) -> AttributeType {
+        panic!()
+        // match *self {
+        //     Attribute::XorMappedAddress(_) => TYPE_XOR_MAPPED_ADDRESS,
+        // }
     }
-    fn read_value_from<R: Read>(attr_type: u16, reader: &mut R) -> Result<Self> {
-        match attr_type {
+    fn read_value_from<R: Read>(attr_type: AttributeType, reader: &mut R) -> Result<Self> {
+        match attr_type.as_u16() {
             TYPE_XOR_MAPPED_ADDRESS => {
                 XorMappedAddress::read_from(reader).map(Attribute::XorMappedAddress)
             }
-            _ => Err(ErrorKind::UnknownAttribute(attr_type).into()),
+            _ => Err(Error::UnknownAttribute(attr_type.as_u16()).into()),
         }
     }
     fn write_value_to<W: Write>(&self, writer: &mut W) -> Result<()> {
@@ -42,10 +44,10 @@ impl XorMappedAddress {
     fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
         let _ = reader.read_u8()?;
         let family = reader.read_u8()?;
-        let port = reader.read_u16::<BigEndian>()?;
+        let port = reader.read_u16()?;
         assert!(family == 1 || family == 2);
         if family == 1 {
-            let x_addr = reader.read_u32::<BigEndian>()?;
+            let x_addr = reader.read_u32()?;
             let addr = ::std::net::Ipv4Addr::from(x_addr ^ MAGIC_COOKIE);
             Ok(XorMappedAddress {
                 address: SocketAddr::V4(::std::net::SocketAddrV4::new(addr, port)),
@@ -53,7 +55,7 @@ impl XorMappedAddress {
         } else {
             // TODO: xor
             let mut buf = [0; 16];
-            reader.read_exact(&mut buf[..])?;
+            fail_if_err!(reader.read_exact(&mut buf[..]).map_err(Failure::new))?;
             let addr = ::std::net::Ipv6Addr::from(buf);
             Ok(XorMappedAddress {
                 address: SocketAddr::V6(::std::net::SocketAddrV6::new(addr, port, 0, 0)),

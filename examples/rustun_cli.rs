@@ -2,11 +2,14 @@ extern crate clap;
 extern crate fibers;
 extern crate futures;
 extern crate rustun;
+#[macro_use]
+extern crate failure;
 
 use clap::{App, Arg};
 use fibers::{Executor, InPlaceExecutor};
 use fibers::net::UdpSocket;
 use futures::Future;
+use failure::Failure;
 use rustun::transport::UdpChannel;
 use rustun::client::Client;
 use rustun::rfc5389;
@@ -30,14 +33,16 @@ fn main() {
     let addr = format!("{}:{}", host, port).parse().expect("Invalid UDP address");
 
     let mut executor = InPlaceExecutor::new().unwrap();
-    let future =
-        UdpSocket::bind("0.0.0.0:0".parse().unwrap()).map_err(From::from).and_then(move |socket| {
+    let future = may_fail!(UdpSocket::bind("0.0.0.0:0".parse().unwrap()).map_err(Failure::new))
+        .and_then(move |socket| {
             let channel = UdpChannel::new(socket, addr);
             let client: Client<_, rfc5389::Attribute, _> = Client::new(channel);
             let request = Message::request(rfc5389::Method::Binding);
-            client.call(request).map(|(_, m)| m)
+            fail_if_err!(client.call(request).map(|(_, m)| m))
         });
     let monitor = executor.spawn_monitor(future);
-    let result = executor.run_fiber(monitor).unwrap();
-    println!("RESULT: {:?}", result);
+    match executor.run_fiber(monitor).unwrap() {
+        Ok(v) => println!("SUCCEEDE: {:?}", v),
+        Err(e) => println!("ERROR: {}", e),
+    }
 }

@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use futures::{Sink, Stream, Poll, Async, StartSend, Future, AsyncSink};
 use fibers::net::UdpSocket;
 use fibers::net::futures::{RecvFrom, SendTo};
+use failure::Failure;
 
 use DEFAULT_MAX_MESSAGE_SIZE;
 use {Error, StunMethod, Attribute};
@@ -99,7 +100,8 @@ impl<M, A> Sink for UdpSender<M, A>
                 Ok(Async::Ready(()))
             }
             UdpSenderInner::Busy(mut f, peer) => {
-                if let Async::Ready((socket, _, _)) = f.poll().map_err(|(_, _, e)| e)? {
+                if let Async::Ready((socket, _, _)) =
+                    may_fail!(f.poll().map_err(|(_, _, e)| Failure::new(e)))? {
                     self.inner = UdpSenderInner::Idle(socket, peer);
                     Ok(Async::Ready(()))
                 } else {
@@ -132,7 +134,8 @@ impl<M, A> Stream for UdpReceiver<M, A>
     type Item = Result<Message<M, A>, Error>;
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        if let Async::Ready((socket, buf, size, _)) = self.future.poll().map_err(|(_, _, e)| e)? {
+        if let Async::Ready((socket, buf, size, _)) =
+            may_fail!(self.future.poll().map_err(|(_, _, e)| Failure::new(e)))? {
             let result = Message::try_from_bytes(&buf[..size]);
             self.future = socket.recv_from(buf);
             Ok(Async::Ready(Some(result)))
