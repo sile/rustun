@@ -149,6 +149,8 @@ impl<R, M, A> Future for ReadMessageInner<R, M, A>
 
 pub type TransactionId = [u8; 12];
 
+// pub type RawMessage = Message<U12, RawAttribute>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message<M, A> {
     message_type: Type<M>,
@@ -198,7 +200,7 @@ impl<M, A> Message<M, A>
     pub fn failure_response(self) -> Self {
         Message {
             message_type: Type {
-                class: Class::FailureResponse,
+                class: Class::ErrorResponse,
                 method: self.message_type.method,
             },
             transaction_id: self.transaction_id,
@@ -206,8 +208,8 @@ impl<M, A> Message<M, A>
         }
     }
 
-    pub fn add_attribute(&mut self, attribute: A) {
-        self.attributes.push(attribute);
+    pub fn add_attribute<T: Into<A>>(&mut self, attribute: T) {
+        self.attributes.push(attribute.into());
     }
     pub fn try_from_bytes(mut bytes: &[u8]) -> Result<Self> {
         Self::read_from(&mut bytes).wait().map(|(_, m)| m).map_err(|(_, e)| e)
@@ -225,6 +227,7 @@ impl<M, A> Message<M, A>
         buf[8..20].copy_from_slice(&self.transaction_id);
 
         let mut attr_writer = io::Cursor::new(buf);
+        attr_writer.set_position(20);
         for attr in self.attributes.iter() {
             if let Err(e) = attr.write_to(&mut attr_writer) {
                 return WriteMessage::error(e);
@@ -268,6 +271,8 @@ impl<M: StunMethod> Type<M> {
     }
 
     pub fn from_u16(value: u16) -> Result<Self> {
+        fail_if!(value >> 14 != 0,
+                 Error::NotStunMessage("First two-bits of STUN message must be 0".to_string()))?;
         let class = ((value >> 4) & 0b01) | ((value >> 7) & 0b10);
         let class = Class::from_u8(class as u8).unwrap();
 
@@ -286,7 +291,7 @@ impl<M: StunMethod> Type<M> {
 pub enum Class {
     Request = 0b00,
     SuccessResponse = 0b01,
-    FailureResponse = 0b10,
+    ErrorResponse = 0b10,
     Indication = 0b11,
 }
 impl Class {
@@ -295,7 +300,7 @@ impl Class {
             0b00 => Some(Class::Request),
             0b01 => Some(Class::Indication),
             0b10 => Some(Class::SuccessResponse),
-            0b11 => Some(Class::FailureResponse),
+            0b11 => Some(Class::ErrorResponse),
             _ => None,
         }
     }
@@ -307,7 +312,7 @@ impl Class {
     }
     pub fn is_response(&self) -> bool {
         match *self {
-            Class::SuccessResponse | Class::FailureResponse => true,
+            Class::SuccessResponse | Class::ErrorResponse => true,
             _ => false,
         }
     }

@@ -1,123 +1,112 @@
 use std::io::{Read, Write};
-use std::net::SocketAddr;
-use failure::Failure;
 
-use MAGIC_COOKIE;
-use attribute;
-use AttributeType;
-use {Result, Error};
-use io::ReadExt;
+use {Result, Error, AttributeType};
 
-pub const TYPE_XOR_MAPPED_ADDRESS: u16 = 0x0020;
+use super::constants;
+use super::attributes;
 
-#[derive(Debug)]
-pub enum Attribute {
-    XorMappedAddress(XorMappedAddress),
+macro_rules! impl_from {
+    ($attr:ident) => {
+        impl From<attributes::$attr> for Attribute {
+            fn from(f: attributes::$attr) -> Self {
+                Attribute::$attr(f)
+            }
+        }
+    }
 }
-impl attribute::Attribute for Attribute {
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Attribute {
+    MappedAddress(attributes::MappedAddress),
+    Username(attributes::Username),
+    MessageIntegrity(attributes::MessageIntegrity),
+    ErrorCode(attributes::ErrorCode),
+    UnknownAttributes(attributes::UnknownAttributes),
+    Realm(attributes::Realm),
+    Nonce(attributes::Nonce),
+    XorMappedAddress(attributes::XorMappedAddress),
+    Software(attributes::Software),
+    AlternateServer(attributes::AlternateServer),
+    Fingerprint(attributes::Fingerprint),
+}
+impl_from!(MappedAddress);
+impl_from!(Username);
+impl_from!(MessageIntegrity);
+impl_from!(ErrorCode);
+impl_from!(UnknownAttributes);
+impl_from!(Realm);
+impl_from!(Nonce);
+impl_from!(XorMappedAddress);
+impl_from!(Software);
+impl_from!(AlternateServer);
+impl_from!(Fingerprint);
+impl ::Attribute for Attribute {
     fn get_type(&self) -> AttributeType {
-        panic!()
-        // match *self {
-        //     Attribute::XorMappedAddress(_) => TYPE_XOR_MAPPED_ADDRESS,
-        // }
+        match *self {
+            Attribute::MappedAddress(ref a) => a.get_type(),
+            Attribute::Username(ref a) => a.get_type(),
+            Attribute::MessageIntegrity(ref a) => a.get_type(),
+            Attribute::ErrorCode(ref a) => a.get_type(),
+            Attribute::UnknownAttributes(ref a) => a.get_type(),
+            Attribute::Realm(ref a) => a.get_type(),
+            Attribute::Nonce(ref a) => a.get_type(),
+            Attribute::XorMappedAddress(ref a) => a.get_type(),
+            Attribute::Software(ref a) => a.get_type(),
+            Attribute::AlternateServer(ref a) => a.get_type(),
+            Attribute::Fingerprint(ref a) => a.get_type(),
+        }
     }
     fn read_value_from<R: Read>(attr_type: AttributeType, reader: &mut R) -> Result<Self> {
         match attr_type.as_u16() {
-            TYPE_XOR_MAPPED_ADDRESS => {
-                XorMappedAddress::read_from(reader).map(Attribute::XorMappedAddress)
+            constants::ATTR_TYPE_MAPPED_ADDRESS => {
+                attributes::MappedAddress::read_value_from(attr_type, reader).map(From::from)
             }
-            _ => Err(Error::UnknownAttribute(attr_type.as_u16()).into()),
+            constants::ATTR_TYPE_USERNAME => {
+                attributes::Username::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_MESSAGE_INTEGRITY => {
+                attributes::MessageIntegrity::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_ERROR_CODE => {
+                attributes::ErrorCode::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_UNKNOWN_ATTRIBUTES => {
+                attributes::UnknownAttributes::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_REALM => {
+                attributes::Realm::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_NONCE => {
+                attributes::Nonce::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_XOR_MAPPED_ADDRESS => {
+                attributes::XorMappedAddress::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_SOFTWARE => {
+                attributes::Software::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_ALTERNATE_SERVER => {
+                attributes::AlternateServer::read_value_from(attr_type, reader).map(From::from)
+            }
+            constants::ATTR_TYPE_FINGERPRINT => {
+                attributes::Fingerprint::read_value_from(attr_type, reader).map(From::from)
+            }
+            _ => Err(Error::UnknownAttribute(attr_type.as_u16())),
         }
     }
     fn write_value_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         match *self {
-            Attribute::XorMappedAddress(ref a) => a.write_to(writer),
+            Attribute::MappedAddress(ref a) => a.write_value_to(writer),
+            Attribute::Username(ref a) => a.write_value_to(writer),
+            Attribute::MessageIntegrity(ref a) => a.write_value_to(writer),
+            Attribute::ErrorCode(ref a) => a.write_value_to(writer),
+            Attribute::UnknownAttributes(ref a) => a.write_value_to(writer),
+            Attribute::Realm(ref a) => a.write_value_to(writer),
+            Attribute::Nonce(ref a) => a.write_value_to(writer),
+            Attribute::XorMappedAddress(ref a) => a.write_value_to(writer),
+            Attribute::Software(ref a) => a.write_value_to(writer),
+            Attribute::AlternateServer(ref a) => a.write_value_to(writer),
+            Attribute::Fingerprint(ref a) => a.write_value_to(writer),
         }
     }
 }
-
-#[derive(Debug)]
-pub struct XorMappedAddress {
-    pub address: SocketAddr,
-}
-impl XorMappedAddress {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
-        let _ = reader.read_u8()?;
-        let family = reader.read_u8()?;
-        let port = reader.read_u16()?;
-        assert!(family == 1 || family == 2);
-        if family == 1 {
-            let x_addr = reader.read_u32()?;
-            let addr = ::std::net::Ipv4Addr::from(x_addr ^ MAGIC_COOKIE);
-            Ok(XorMappedAddress {
-                address: SocketAddr::V4(::std::net::SocketAddrV4::new(addr, port)),
-            })
-        } else {
-            // TODO: xor
-            let mut buf = [0; 16];
-            fail_if_err!(reader.read_exact(&mut buf[..]).map_err(Failure::new))?;
-            let addr = ::std::net::Ipv6Addr::from(buf);
-            Ok(XorMappedAddress {
-                address: SocketAddr::V6(::std::net::SocketAddrV6::new(addr, port, 0, 0)),
-            })
-        }
-    }
-    fn write_to<W: Write>(&self, _writer: &mut W) -> Result<()> {
-        panic!()
-    }
-}
-
-
-
-// #[derive(Debug, Clone, Copy)]
-// pub enum AttrType {
-//     MappedAddress,
-//     Username,
-//     MessageIntegrity,
-//     ErrorCode,
-//     UnknownAttributes,
-//     Realm,
-//     Nonce,
-//     XorMappedAddress,
-//     Software,
-//     AlternateServer,
-//     Fingerprint,
-//     Other(u16),
-// }
-// impl AttrType {
-//     pub fn from_u16(value: u16) -> Self {
-//         match value {
-//             0x0001 => AttrType::MappedAddress,
-//             0x0006 => AttrType::Username,
-//             0x0008 => AttrType::MessageIntegrity,
-//             0x0009 => AttrType::ErrorCode,
-//             0x000A => AttrType::UnknownAttributes,
-//             0x0014 => AttrType::Realm,
-//             0x0015 => AttrType::Nonce,
-//             0x0020 => AttrType::XorMappedAddress,
-//             0x8022 => AttrType::Software,
-//             0x8023 => AttrType::AlternateServer,
-//             0x8028 => AttrType::Fingerprint,
-//             other => AttrType::Other(other),
-//         }
-//     }
-//     pub fn as_u16(&self) -> u16 {
-//         match *self {
-//             AttrType::MappedAddress => 0x0001,
-//             AttrType::Username => 0x0006,
-//             AttrType::MessageIntegrity => 0x0008,
-//             AttrType::ErrorCode => 0x0009,
-//             AttrType::UnknownAttributes => 0x000A,
-//             AttrType::Realm => 0x0014,
-//             AttrType::Nonce => 0x0015,
-//             AttrType::XorMappedAddress => 0x0020,
-//             AttrType::Software => 0x0022,
-//             AttrType::AlternateServer => 0x0023,
-//             AttrType::Fingerprint => 0x8028,
-//             AttrType::Other(value) => value,
-//         }
-//     }
-//     pub fn is_comprehension_required(&self) -> bool {
-//         self.as_u16() < 0x8000
-//     }
-// }

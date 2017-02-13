@@ -88,3 +88,24 @@ pub trait Attribute: Sized {
     }
     fn write_value_to<W: Write>(&self, writer: &mut W) -> Result<()>;
 }
+
+// #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// pub struct RawAttribute {
+//     attr_type: AttributeType,
+//     value: Vec<u8>,
+//     padding: [u8; 4],
+// }
+// impl Attribute for RawAttribute {
+//     fn get_type(&self) -> AttributeType {
+//         self.attr_type
+//     }
+//     fn read_value_from<R: Read>(attr_type: AttributeType, reader: &mut R) -> Result<Self> {
+
+//         Ok(RawAttribute {
+//             attr_type: attr_type,
+//             value: value,
+//             padding: padding,
+//         })
+//     }
+//     fn write_value_to<W: Write>(&self, writer: &mut W) -> Result<()> {}
+// }

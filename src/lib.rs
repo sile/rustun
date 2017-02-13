@@ -15,10 +15,17 @@ pub mod client;
 pub mod server;
 pub mod message;
 pub mod attribute;
+pub mod attr;
+pub mod msg;
 pub mod types;
-pub mod rfc5389;
 pub mod transport;
+pub mod transport2;
 pub mod io;
+pub mod rfc5389;
+
+pub mod constants {
+    pub const DEFAULT_MESSAGE_BUFFER_SIZE: usize = 548;
+}
 
 pub const DEFAULT_PORT: u16 = 3478;
 pub const DEFAULT_TLS_PORT: u16 = 5349;
@@ -27,10 +34,21 @@ pub const MAGIC_COOKIE: u32 = 0x2112A442;
 
 pub const DEFAULT_MAX_MESSAGE_SIZE: usize = 568;
 
-// TODO: rename
 pub trait StunMethod: Sized {
     fn from_u12(value: U12) -> Option<Self>;
     fn as_u12(&self) -> U12;
+    fn permits_class(&self, class: message::Class) -> bool;
+}
+impl StunMethod for U12 {
+    fn from_u12(value: U12) -> Option<Self> {
+        Some(value)
+    }
+    fn as_u12(&self) -> U12 {
+        *self
+    }
+    fn permits_class(&self, _class: message::Class) -> bool {
+        true
+    }
 }
 
 pub trait Protocol {
@@ -43,6 +61,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
+    NotStunMessage(String),
     UnknownMethod(U12),
     UnknownAttribute(u16),
     UnexpectedMagicCookie(u32),
@@ -51,6 +70,13 @@ pub enum Error {
     ChannelDisconnected,
     ChannelFull,
     Failed(failure::Failure),
+}
+impl Error {
+    pub fn failed<E>(error: E) -> Self
+        where E: Into<Box<std::error::Error + Send + Sync>>
+    {
+        Error::from(failure::Failure::new(error))
+    }
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {

@@ -13,6 +13,7 @@ use failure::Failure;
 use rustun::transport::UdpChannel;
 use rustun::client::Client;
 use rustun::rfc5389;
+use rustun::rfc5389::attributes::Software;
 use rustun::message::Message;
 
 fn main() {
@@ -37,7 +38,8 @@ fn main() {
         .and_then(move |socket| {
             let channel = UdpChannel::new(socket, addr);
             let client: Client<_, rfc5389::Attribute, _> = Client::new(channel);
-            let request = Message::request(rfc5389::Method::Binding);
+            let mut request = Message::request(rfc5389::Method::Binding);
+            request.add_attribute(Software::new("rustun_cli").unwrap());
             fail_if_err!(client.call(request).map(|(_, m)| m))
         });
     let monitor = executor.spawn_monitor(future);
