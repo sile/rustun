@@ -7,3 +7,4 @@ pub const DEFAULT_RC: u32 = 7;
 pub const DEFAULT_RM: u32 = 16;
 pub const DEFAULT_TI_MS: u64 = 39_500;
 pub const DEFAULT_MAX_CLIENT_CONCURRENCY: usize = 10;
+pub const DEFAULT_MIN_TRANSACTION_INTERVAL_MS: u64 = DEFAULT_RTO_MS;
