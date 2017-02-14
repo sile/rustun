@@ -5,16 +5,16 @@ use message::RawMessage;
 use io::{ReadExt, WriteExt};
 
 pub trait Attribute: Sized {
-    fn get_type(&self) -> AttributeType;
+    fn get_type(&self) -> Type;
     fn decode(attr: &RawAttribute, message: &RawMessage) -> Result<Self>;
     fn encode(&self, message: &RawMessage) -> Result<RawAttribute>;
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct AttributeType(u16);
-impl AttributeType {
+pub struct Type(u16);
+impl Type {
     pub fn new(type_u16: u16) -> Self {
-        AttributeType(type_u16)
+        Type(type_u16)
     }
     pub fn as_u16(&self) -> u16 {
         self.0
@@ -26,7 +26,7 @@ impl AttributeType {
         !self.is_comprehension_required()
     }
 }
-impl From<u16> for AttributeType {
+impl From<u16> for Type {
     fn from(f: u16) -> Self {
         Self::new(f)
     }
@@ -34,21 +34,18 @@ impl From<u16> for AttributeType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RawAttribute {
-    attr_type: AttributeType,
+    attr_type: Type,
     value: Vec<u8>,
     padding: [u8; 4],
 }
 impl RawAttribute {
-    pub fn new(attr_type: AttributeType, value: Vec<u8>) -> Self {
+    pub fn new(attr_type: Type, value: Vec<u8>) -> Self {
         assert!(value.len() < 0x10000);
         RawAttribute {
             attr_type: attr_type,
             value: value,
             padding: [0; 4],
         }
-    }
-    pub fn attr_type(&self) -> AttributeType {
-        self.attr_type
     }
     pub fn value(&self) -> &[u8] {
         &self.value
@@ -59,7 +56,7 @@ impl RawAttribute {
     }
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
         let attr_type = may_fail!(reader.read_u16())?;
-        let attr_type = AttributeType::new(attr_type);
+        let attr_type = Type::new(attr_type);
         let value_len = may_fail!(reader.read_u16())? as u64;
         let value = may_fail!(reader.take(value_len).read_all_bytes())?;
         let mut padding = [0; 4];
@@ -80,8 +77,8 @@ impl RawAttribute {
     }
 }
 impl Attribute for RawAttribute {
-    fn get_type(&self) -> AttributeType {
-        self.attr_type()
+    fn get_type(&self) -> Type {
+        self.attr_type
     }
     fn decode(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         Ok(attr.clone())

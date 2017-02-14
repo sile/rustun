@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use futures::Future;
 
 pub use self::tcp::{TcpSender, TcpReceiver};
-pub use self::udp::{UdpSender, UdpReceiver};
+pub use self::udp::{UdpSender, UdpReceiver, UdpRetransmissionSpec};
 
 use Error;
 use message::RawMessage;
@@ -23,6 +23,7 @@ mod common;
 pub trait SendMessage {
     type Future: Future<Item = (), Error = Error>;
     fn send_message(&mut self, message: RawMessage) -> Self::Future;
+    fn send_request(&mut self, message: RawMessage) -> Self::Future;
 }
 
 pub trait RecvMessage: Sized {

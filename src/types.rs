@@ -17,3 +17,7 @@ impl U12 {
 }
 
 pub type TransactionId = [u8; 12];
+
+// TODO: delete(?)
+#[derive(Debug)]
+pub struct Unused(());

@@ -2,13 +2,16 @@ use std::io;
 use std::fmt;
 use std::error;
 use failure::{Failure, MaybeFailure};
+use fibers::sync::oneshot::MonitorError;
 
 use types::U12;
 
 #[derive(Debug)]
 pub enum Error {
     Timeout,
+    Full,
     NotStunMessage(String),
+    // TODO: InvalidMessage
     UnknownMethod(U12),
     Failed(Failure),
 }
@@ -44,6 +47,11 @@ impl From<Failure> for Error {
 impl From<io::Error> for Error {
     fn from(f: io::Error) -> Self {
         Error::Failed(Failure::new(f))
+    }
+}
+impl From<MonitorError<Error>> for Error {
+    fn from(f: MonitorError<Error>) -> Self {
+        f.unwrap_or_else(|| Error::failed("Monitor channel disconnected"))
     }
 }
 impl MaybeFailure for Error {

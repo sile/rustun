@@ -91,6 +91,30 @@ impl Class {
 pub type RawMessage = Message<U12, RawAttribute>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Indication<M, A>(Message<M, A>);
+impl<M, A> Indication<M, A> {
+    pub fn into_inner(self) -> Message<M, A> {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Request<M, A>(Message<M, A>);
+impl<M, A> Request<M, A> {
+    pub fn into_inner(self) -> Message<M, A> {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Response<M, A>(Message<M, A>);
+impl<M, A> Response<M, A> {
+    pub fn into_inner(self) -> Message<M, A> {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message<M, A> {
     message_type: Type<M>,
     transaction_id: TransactionId,
@@ -148,6 +172,15 @@ impl<M, A> Message<M, A>
     }
     pub fn add_attribute<T: Into<A>>(&mut self, attribute: T) {
         self.attributes.push(attribute.into());
+    }
+    pub fn into_raw(self) -> RawMessage {
+        panic!()
+    }
+    pub fn try_from_raw(raw: RawMessage) -> Result<Self> {
+        panic!()
+    }
+    pub fn try_into_response(self) -> Result<Response<M, A>> {
+        panic!()
     }
 }
 impl RawMessage {
