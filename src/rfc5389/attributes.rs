@@ -1,8 +1,8 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, IpAddr};
+use handy_async::sync_io::{ReadExt, WriteExt};
 
 use {Result, Error, Attribute};
-use io::{ReadExt, WriteExt};
 use message::RawMessage;
 use attribute::{Type, RawAttribute};
 use constants;
@@ -61,17 +61,17 @@ impl Attribute for XorMappedAddress {
 }
 
 fn read_socket_addr<R: Read>(reader: &mut R) -> Result<SocketAddr> {
-    let _ = may_fail!(reader.read_u8())?;
-    let family = may_fail!(reader.read_u8())?;
-    let port = may_fail!(reader.read_u16())?;
+    let _ = may_fail!(reader.read_u8().map_err(Error::from))?;
+    let family = may_fail!(reader.read_u8().map_err(Error::from))?;
+    let port = may_fail!(reader.read_u16be().map_err(Error::from))?;
     let ip = match family {
         1 => {
-            let ip = may_fail!(reader.read_u32())?;
+            let ip = may_fail!(reader.read_u32be().map_err(Error::from))?;
             IpAddr::V4(From::from(ip))
         }
         2 => {
             let mut octets = [0; 16];
-            may_fail!(reader.read_exact_bytes(&mut octets[..]))?;
+            may_fail!(reader.read_exact(&mut octets[..]).map_err(Error::from))?;
             IpAddr::V6(From::from(octets))
         }
         _ => {
@@ -83,17 +83,17 @@ fn read_socket_addr<R: Read>(reader: &mut R) -> Result<SocketAddr> {
 }
 
 fn write_socket_addr<W: Write>(writer: &mut W, addr: SocketAddr) -> Result<()> {
-    may_fail!(writer.write_u8(0))?;
+    may_fail!(writer.write_u8(0).map_err(Error::from))?;
     match addr.ip() {
         IpAddr::V4(ip) => {
-            may_fail!(writer.write_u8(1))?;
-            may_fail!(writer.write_u16(addr.port()))?;
-            may_fail!(writer.write_all_bytes(&ip.octets()))?;
+            may_fail!(writer.write_u8(1).map_err(Error::from))?;
+            may_fail!(writer.write_u16be(addr.port()).map_err(Error::from))?;
+            may_fail!(writer.write_all(&ip.octets()).map_err(Error::from))?;
         }
         IpAddr::V6(ip) => {
-            may_fail!(writer.write_u8(2))?;
-            may_fail!(writer.write_u16(addr.port()))?;
-            may_fail!(writer.write_all_bytes(&ip.octets()))?;
+            may_fail!(writer.write_u8(2).map_err(Error::from))?;
+            may_fail!(writer.write_u16be(addr.port()).map_err(Error::from))?;
+            may_fail!(writer.write_all(&ip.octets()).map_err(Error::from))?;
         }
     }
     Ok(())

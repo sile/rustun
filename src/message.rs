@@ -1,10 +1,10 @@
 use std::io::{Read, Write, Cursor};
 use rand;
+use handy_async::sync_io::{ReadExt, WriteExt};
 
 use {Result, Error, Method, Attribute};
 use types::{U12, TransactionId};
 use attribute::RawAttribute;
-use io::{ReadExt, WriteExt};
 use constants::MAGIC_COOKIE;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -189,13 +189,13 @@ impl<M, A> Message<M, A>
 }
 impl RawMessage {
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
-        let message_type = may_fail!(reader.read_u16())?;
+        let message_type = may_fail!(reader.read_u16be().map_err(Error::from))?;
         let message_type = may_fail!(Type::from_u16(message_type))?;
-        let message_len = may_fail!(reader.read_u16())?;
+        let message_len = may_fail!(reader.read_u16be().map_err(Error::from))?;
         fail_if!(message_len % 4 != 0,
                  Error::NotStunMessage(format!("Unexpected message length: {} % 4 != 0",
                                                message_len)))?;
-        let magic_cookie = may_fail!(reader.read_u32())?;
+        let magic_cookie = may_fail!(reader.read_u32be().map_err(Error::from))?;
         fail_if!(magic_cookie != MAGIC_COOKIE,
                  Error::NotStunMessage(format!("Unexpected magic cookie: actual={}, \
                                                 expected={}",
@@ -203,7 +203,7 @@ impl RawMessage {
                                                MAGIC_COOKIE)))?;
 
         let mut transaction_id: [u8; 12] = [0; 12];
-        may_fail!(reader.read_exact_bytes(&mut transaction_id))?;
+        may_fail!(reader.read_exact(&mut transaction_id).map_err(Error::from))?;
 
         let mut attrs = Vec::new();
         let mut reader = reader.take(message_len as u64);
@@ -219,10 +219,10 @@ impl RawMessage {
     }
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         let mut temp_writer = Cursor::new(vec![0; 20]);
-        may_fail!(temp_writer.write_u16(self.message_type.as_u16()))?;
-        may_fail!(temp_writer.write_u16(0))?; // dummy length
-        may_fail!(temp_writer.write_u32(MAGIC_COOKIE))?;
-        may_fail!(temp_writer.write_all_bytes(&self.transaction_id))?;
+        may_fail!(temp_writer.write_u16be(self.message_type.as_u16()).map_err(Error::from))?;
+        may_fail!(temp_writer.write_u16be(0).map_err(Error::from))?; // dummy length
+        may_fail!(temp_writer.write_u32be(MAGIC_COOKIE).map_err(Error::from))?;
+        may_fail!(temp_writer.write_all(&self.transaction_id).map_err(Error::from))?;
         for attr in self.attributes.iter() {
             attr.write_to(&mut temp_writer)?;
         }
@@ -231,10 +231,10 @@ impl RawMessage {
                  "Too large message length: actual={}, limit=0xFFFF",
                  attrs_len)?;
         temp_writer.set_position(2);
-        may_fail!(temp_writer.write_u16(attrs_len as u16))?;
+        may_fail!(temp_writer.write_u16be(attrs_len as u16).map_err(Error::from))?;
 
         let buf = temp_writer.into_inner();
-        may_fail!(writer.write_all_bytes(&buf))?;
+        may_fail!(writer.write_all(&buf).map_err(Error::from))?;
         Ok(())
     }
 }

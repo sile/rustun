@@ -15,7 +15,7 @@ pub use method::Method;
 pub use message::Message;
 pub use attribute::Attribute;
 
-pub mod io;
+// pub mod io;
 pub mod types;
 pub mod clients;
 pub mod message;
