@@ -5,7 +5,6 @@ extern crate fibers;
 extern crate futures;
 #[macro_use]
 extern crate failure;
-extern crate byteorder;
 extern crate handy_async;
 
 pub use error::Error;

@@ -8,7 +8,6 @@ slog = "1"
 fibers = "0.1"
 futures = "0.1"
 rand = "0.3"
-byteorder = "1"
 handy_async = "0.2"
 failure = {git = "https://github.com/sile/failure.git"}
 

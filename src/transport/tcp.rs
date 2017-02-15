@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use fibers::net::TcpStream;
 use fibers::time::timer;
 use futures::{self, Future, BoxFuture};
-use byteorder::{ByteOrder, BigEndian};
 use handy_async::pattern::{Pattern, Window};
 use handy_async::io::{ReadFrom, WriteInto};
 
@@ -66,8 +65,9 @@ impl TcpReceiver {
 impl RecvMessage for TcpReceiver {
     type Future = TcpRecvMessage;
     fn recv_message(self) -> Self::Future {
+        use handy_async::sync_io::ReadExt;
         let pattern = vec![0; 20].and_then(|mut buf| {
-            let attrs_len = BigEndian::read_u16(&buf[2..4]) as usize;
+            let attrs_len = (&buf[2..4]).read_u16be().unwrap() as usize;
             buf.resize(20 + attrs_len, 0);
             Window::new(buf).set_start(20)
         });
