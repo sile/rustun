@@ -5,7 +5,7 @@ use slog::Logger;
 use fibers::net::UdpSocket;
 use fibers::net::futures::{RecvFrom, SendTo};
 use fibers::time::timer::{self, Timeout};
-use futures::{self, Future, Poll, Async};
+use futures::{self, Future, Poll, Async, Fuse};
 
 use Error;
 use message::RawMessage;
@@ -47,6 +47,7 @@ pub struct UdpSender {
 }
 impl UdpSender {
     pub fn new(socket: UdpSocket, peer: SocketAddr) -> Self {
+        println!("# {:?}", socket);
         let (rto_tx, rto_rx) = std_mpsc::channel();
         UdpSender {
             socket: socket,
@@ -118,7 +119,7 @@ impl Future for SendInner {
     }
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 struct Call {
     socket: UdpSocket,
     peer: SocketAddr,
@@ -127,7 +128,7 @@ struct Call {
     retransmission_spec: UdpRetransmissionSpec,
     rto_tx: std_mpsc::Sender<RtoCache>,
     timeout: Timeout,
-    future: Option<SendTo<Vec<u8>>>,
+    future: Option<Fuse<SendTo<Vec<u8>>>>,
 }
 impl Drop for Call {
     fn drop(&mut self) {
@@ -159,7 +160,7 @@ impl Future for Call {
                     self.retransmission_spec.rto * self.send_count
                 };
                 self.timeout = timer::timeout(duration);
-                self.future = Some(future);
+                self.future = Some(future.fuse());
                 continue;
             } else {
                 return Err(Error::Timeout);

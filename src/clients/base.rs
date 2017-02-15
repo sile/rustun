@@ -1,12 +1,13 @@
 use std::net::SocketAddr;
 use std::marker::PhantomData;
 use std::collections::HashMap;
+use std::sync::Arc;
 use fibers::Spawn;
 use fibers::sync::oneshot::{self, Link, Monitor, Monitored};
 use fibers::sync::mpsc;
 use futures::{Future, Poll, Async, Stream};
 
-use {Client, Method, Attribute, Message, Error};
+use {Client, Method, Attribute, Message, Error, Result};
 use transport::{SendMessage, RecvMessage};
 use transport::streams::MessageStream;
 use message::{Indication, Request, Response, RawMessage};
@@ -18,11 +19,13 @@ enum Command {
     AbortTransaction(TransactionId),
 }
 
+type RecvLoopLink = Arc<Link<(), (), (), Error>>;
+
 #[derive(Debug)]
 pub struct BaseClient<S, R> {
     sender: S,
     command_tx: mpsc::Sender<Command>,
-    link: Link<(), (), (), Error>,
+    link: RecvLoopLink,
     _phantom: PhantomData<R>,
 }
 impl<S, R> BaseClient<S, R>
@@ -32,11 +35,11 @@ impl<S, R> BaseClient<S, R>
 {
     pub fn new<T: Spawn>(spawner: T, sender: S, receiver: R) -> Self {
         let (command_tx, command_rx) = mpsc::channel();
-        let link = spawner.spawn_link(BaseRecvLoop::new(receiver, command_rx));
+        let link = spawner.spawn_link(RecvLoop::new(receiver, command_rx));
         BaseClient {
             sender: sender,
             command_tx: command_tx,
-            link: link,
+            link: Arc::new(link),
             _phantom: PhantomData,
         }
     }
@@ -48,27 +51,28 @@ impl<M, A, S, R> Client<M, A> for BaseClient<S, R>
           R: RecvMessage
 {
     type Call = BaseCall<M, A, S::Future>;
-    type Cast = S::Future;
+    type Cast = BaseCast<S::Future>;
     fn call(&mut self, message: Request<M, A>) -> Self::Call {
-        let message = message.into_inner().into_raw();
-        let id = message.transaction_id();
-        let future = self.sender.send_request(message);
-        BaseCall::new(id, future, self.command_tx.clone())
+        BaseCall(Some(may_fail!(message.into_inner().try_into_raw()).map(|message| {
+            let id = message.transaction_id();
+            let future = self.sender.send_request(message);
+            BaseCallInner::new(id, future, self.command_tx.clone(), self.link.clone())
+        })))
     }
     fn cast(&mut self, message: Indication<M, A>) -> Self::Cast {
-        let message = message.into_inner().into_raw();
-        self.sender.send_message(message)
+        BaseCast(Some(may_fail!(message.into_inner().try_into_raw())
+            .map(|message| self.sender.send_message(message))))
     }
 }
 
-struct BaseRecvLoop<R: RecvMessage> {
+struct RecvLoop<R: RecvMessage> {
     message_rx: MessageStream<R>,
     command_rx: mpsc::Receiver<Command>,
     transactions: HashMap<TransactionId, Monitored<RawMessage, Error>>,
 }
-impl<R: RecvMessage> BaseRecvLoop<R> {
+impl<R: RecvMessage> RecvLoop<R> {
     fn new(receiver: R, command_rx: mpsc::Receiver<Command>) -> Self {
-        BaseRecvLoop {
+        RecvLoop {
             message_rx: receiver.into_stream(),
             command_rx: command_rx,
             transactions: HashMap::new(),
@@ -90,7 +94,7 @@ impl<R: RecvMessage> BaseRecvLoop<R> {
         }
     }
 }
-impl<R: RecvMessage> Future for BaseRecvLoop<R> {
+impl<R: RecvMessage> Future for RecvLoop<R> {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -108,34 +112,60 @@ impl<R: RecvMessage> Future for BaseRecvLoop<R> {
 }
 
 #[derive(Debug)]
-pub struct BaseCall<M, A, F> {
+pub struct BaseCall<M, A, F>(Option<Result<BaseCallInner<M, A, F>>>);
+impl<M, A, F> Future for BaseCall<M, A, F>
+    where M: Method,
+          A: Attribute,
+          F: Future<Item = (), Error = Error>
+{
+    type Item = Response<M, A>;
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let mut f = self.0.take().expect("Cannot poll BaseCall twice")?;
+        let result = f.poll()?;
+        if let Async::NotReady = result {
+            self.0 = Some(Ok(f));
+        }
+        Ok(result)
+    }
+}
+
+#[derive(Debug)]
+struct BaseCallInner<M, A, F> {
     id: TransactionId,
     send_req: F,
     recv_res: Monitor<RawMessage, Error>,
     command_tx: Option<mpsc::Sender<Command>>,
+    link: RecvLoopLink,
     _phantom: PhantomData<(M, A)>,
 }
-impl<M, A, F> BaseCall<M, A, F> {
-    fn new(id: TransactionId, future: F, command_tx: mpsc::Sender<Command>) -> Self {
+unsafe impl<M: Send, A: Send, F: Send> Send for BaseCallInner<M, A, F> {}
+impl<M, A, F> BaseCallInner<M, A, F> {
+    fn new(id: TransactionId,
+           future: F,
+           command_tx: mpsc::Sender<Command>,
+           link: RecvLoopLink)
+           -> Self {
         let (monitored, monitor) = oneshot::monitor();
         let _ = command_tx.send(Command::StartTransaction(id, monitored));
-        BaseCall {
+        BaseCallInner {
             id: id,
             send_req: future,
             recv_res: monitor,
             command_tx: Some(command_tx),
+            link: link,
             _phantom: PhantomData,
         }
     }
 }
-impl<M, A, F> Drop for BaseCall<M, A, F> {
+impl<M, A, F> Drop for BaseCallInner<M, A, F> {
     fn drop(&mut self) {
         if let Some(tx) = self.command_tx.take() {
             let _ = tx.send(Command::AbortTransaction(self.id));
         }
     }
 }
-impl<M, A, F> Future for BaseCall<M, A, F>
+impl<M, A, F> Future for BaseCallInner<M, A, F>
     where M: Method,
           A: Attribute,
           F: Future<Item = (), Error = Error>
@@ -154,5 +184,22 @@ impl<M, A, F> Future for BaseCall<M, A, F>
         } else {
             Ok(Async::NotReady)
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct BaseCast<F>(Option<Result<F>>);
+impl<F> Future for BaseCast<F>
+    where F: Future<Item = (), Error = Error>
+{
+    type Item = ();
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let mut f = self.0.take().expect("Cannot poll BaseCast twice")?;
+        let result = f.poll()?;
+        if let Async::NotReady = result {
+            self.0 = Some(Ok(f));
+        }
+        Ok(result)
     }
 }

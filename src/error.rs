@@ -4,15 +4,12 @@ use std::error;
 use failure::{Failure, MaybeFailure};
 use fibers::sync::oneshot::MonitorError;
 
-use types::U12;
-
 #[derive(Debug)]
 pub enum Error {
     Timeout,
     Full,
     NotStunMessage(String),
-    // TODO: InvalidMessage
-    UnknownMethod(U12),
+    Unsupported(String),
     Failed(Failure),
 }
 impl Error {
@@ -21,22 +18,36 @@ impl Error {
     {
         Error::from(Failure::new(error))
     }
+    pub fn unsupported<T: Into<String>>(message: T) -> Self {
+        Error::Unsupported(message.into())
+    }
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            Error::Timeout => write!(f, "Timeout"),
+            Error::Full => write!(f, "Over capacity"),
+            Error::NotStunMessage(ref s) => write!(f, "Not STUN message: {}", s),
+            Error::Unsupported(ref s) => write!(f, "Unsupported feature: {}", s),
             Error::Failed(ref failure) => write!(f, "{}", failure),
-            _ => unimplemented!(),
         }
     }
 }
 impl error::Error for Error {
     fn description(&self) -> &str {
-        // TODO
-        unimplemented!()
+        match *self {
+            Error::Timeout => "Timeout",
+            Error::Full => "Over capacity",
+            Error::NotStunMessage(_) => "Not STUN message",
+            Error::Unsupported(_) => "Unsupported feature",
+            Error::Failed(_) => "Failed",
+        }
     }
     fn cause(&self) -> Option<&error::Error> {
-        unimplemented!()
+        match *self {
+            Error::Failed(ref e) => e.cause(),
+            _ => None,
+        }
     }
 }
 impl From<Failure> for Error {

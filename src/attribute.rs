@@ -7,7 +7,10 @@ use io::{ReadExt, WriteExt};
 pub trait Attribute: Sized {
     fn get_type(&self) -> Type;
     fn decode(attr: &RawAttribute, message: &RawMessage) -> Result<Self>;
-    fn encode(&self, message: &RawMessage) -> Result<RawAttribute>;
+    fn encode(&self, message: &RawMessage) -> Result<RawAttribute> {
+        self.encode_value(message).map(|value| RawAttribute::new(self.get_type(), value))
+    }
+    fn encode_value(&self, message: &RawMessage) -> Result<Vec<u8>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -83,7 +86,7 @@ impl Attribute for RawAttribute {
     fn decode(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         Ok(attr.clone())
     }
-    fn encode(&self, _message: &RawMessage) -> Result<RawAttribute> {
-        Ok(self.clone())
+    fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
+        Ok(self.value.clone())
     }
 }

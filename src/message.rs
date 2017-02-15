@@ -39,24 +39,26 @@ impl<M: Method> Type<M> {
                  Error::NotStunMessage("First two-bits of STUN message must be 0".to_string()))?;
         let class = ((value >> 4) & 0b01) | ((value >> 7) & 0b10);
         let class = Class::from_u8(class as u8).unwrap();
-
         let method = (value & 0b0000_0000_1111) | ((value >> 1) & 0b0000_0111_0000) |
                      ((value >> 2) & 0b1111_1000_0000);
         let method = U12::from_u16(method).unwrap();
-        let method = M::from_u12(method).ok_or(Error::UnknownMethod(method))?;
-        Ok(Type {
-            class: class,
-            method: method,
-        })
+        if let Some(method) = M::from_u12(method) {
+            Ok(Type {
+                class: class,
+                method: method,
+            })
+        } else {
+            Err(Error::unsupported(format!("Unknown method: {:?}", method)))
+        }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum Class {
     Request = 0b00,
-    SuccessResponse = 0b01,
-    ErrorResponse = 0b10,
-    Indication = 0b11,
+    Indication = 0b01,
+    SuccessResponse = 0b10,
+    ErrorResponse = 0b11,
 }
 impl Class {
     pub fn from_u8(value: u8) -> Option<Self> {
@@ -100,6 +102,17 @@ impl<M, A> Indication<M, A> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request<M, A>(Message<M, A>);
+impl<M, A> Request<M, A>
+    where M: Method,
+          A: Attribute
+{
+    pub fn new(method: M) -> Self {
+        Request(Message::new(Type {
+            class: Class::Request,
+            method: method,
+        }))
+    }
+}
 impl<M, A> Request<M, A> {
     pub fn into_inner(self) -> Message<M, A> {
         self.0
@@ -134,53 +147,44 @@ impl<M, A> Message<M, A>
     pub fn class(&self) -> Class {
         self.message_type.class
     }
+    pub fn method(&self) -> &M {
+        &self.message_type.method
+    }
     pub fn transaction_id(&self) -> TransactionId {
         self.transaction_id
-    }
-
-    pub fn request(method: M) -> Self {
-        Self::new(Type {
-            class: Class::Request,
-            method: method,
-        })
-    }
-    pub fn indication(method: M) -> Self {
-        Self::new(Type {
-            class: Class::Indication,
-            method: method,
-        })
-    }
-    pub fn success_response(self) -> Self {
-        Message {
-            message_type: Type {
-                class: Class::SuccessResponse,
-                method: self.message_type.method,
-            },
-            transaction_id: self.transaction_id,
-            attributes: Vec::new(),
-        }
-    }
-    pub fn failure_response(self) -> Self {
-        Message {
-            message_type: Type {
-                class: Class::ErrorResponse,
-                method: self.message_type.method,
-            },
-            transaction_id: self.transaction_id,
-            attributes: Vec::new(),
-        }
     }
     pub fn add_attribute<T: Into<A>>(&mut self, attribute: T) {
         self.attributes.push(attribute.into());
     }
-    pub fn into_raw(self) -> RawMessage {
-        panic!()
+    pub fn try_into_raw(self) -> Result<RawMessage> {
+        let mut raw = RawMessage::new(Type {
+            class: self.class(),
+            method: self.method().as_u12(),
+        });
+        for a in self.attributes.iter() {
+            let a = may_fail!(a.encode(&raw))?;
+            raw.add_attribute(a);
+        }
+        Ok(raw)
     }
     pub fn try_from_raw(raw: RawMessage) -> Result<Self> {
-        panic!()
+        let message_type = may_fail!(Type::from_u16(raw.message_type.as_u16()))?;
+        let mut message = Message {
+            message_type: message_type,
+            transaction_id: raw.transaction_id,
+            attributes: Vec::new(),
+        };
+        for a in raw.attributes.iter() {
+            let a = may_fail!(A::decode(a, &raw))?;
+            message.add_attribute(a);
+        }
+        Ok(message)
     }
     pub fn try_into_response(self) -> Result<Response<M, A>> {
-        panic!()
+        fail_if!(!self.class().is_response(),
+                 "Not a response message: class={:?}",
+                 self.class())?;
+        Ok(Response(self))
     }
 }
 impl RawMessage {
