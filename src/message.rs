@@ -36,7 +36,7 @@ impl<M: Method> Type<M> {
 
     pub fn from_u16(value: u16) -> Result<Self> {
         fail_if!(value >> 14 != 0,
-                 Error::NotStunMessage("First two-bits of STUN message must be 0".to_string()))?;
+                 Error::not_stun("First two-bits of STUN message must be 0"))?;
         let class = ((value >> 4) & 0b01) | ((value >> 7) & 0b10);
         let class = Class::from_u8(class as u8).unwrap();
         let method = (value & 0b0000_0000_1111) | ((value >> 1) & 0b0000_0111_0000) |
@@ -193,14 +193,13 @@ impl RawMessage {
         let message_type = may_fail!(Type::from_u16(message_type))?;
         let message_len = may_fail!(reader.read_u16be().map_err(Error::from))?;
         fail_if!(message_len % 4 != 0,
-                 Error::NotStunMessage(format!("Unexpected message length: {} % 4 != 0",
-                                               message_len)))?;
+                 Error::not_stun(format!("Unexpected message length: {} % 4 != 0", message_len)))?;
         let magic_cookie = may_fail!(reader.read_u32be().map_err(Error::from))?;
         fail_if!(magic_cookie != MAGIC_COOKIE,
-                 Error::NotStunMessage(format!("Unexpected magic cookie: actual={}, \
+                 Error::not_stun(format!("Unexpected magic cookie: actual={}, \
                                                 expected={}",
-                                               magic_cookie,
-                                               MAGIC_COOKIE)))?;
+                                         magic_cookie,
+                                         MAGIC_COOKIE)))?;
 
         let mut transaction_id: [u8; 12] = [0; 12];
         may_fail!(reader.read_exact(&mut transaction_id).map_err(Error::from))?;
