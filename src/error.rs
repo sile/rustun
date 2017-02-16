@@ -1,15 +1,16 @@
 use std::io;
 use std::fmt;
 use std::error;
+use std::any::Any;
 use failure::{Failure, MaybeFailure};
 use fibers::sync::oneshot::MonitorError;
 
-#[derive(Debug)]
 pub enum Error {
     Timeout,
     Full,
     NotStunMessage(String),
     Unsupported(String),
+    Other(String, Box<Any + Send + Sync>),
     Failed(Failure),
 }
 impl Error {
@@ -21,6 +22,32 @@ impl Error {
     pub fn unsupported<T: Into<String>>(message: T) -> Self {
         Error::Unsupported(message.into())
     }
+    pub fn other<E>(other: E) -> Self
+        where E: fmt::Display + Any + Send + Sync
+    {
+        Error::Other(other.to_string(), Box::new(other))
+    }
+    pub fn get<T: Any>(&self) -> Option<&T> {
+        use std::ops::Deref;
+        if let Error::Other(_, ref e) = *self {
+            let e: &Any = e.deref();
+            e.downcast_ref()
+        } else {
+            None
+        }
+    }
+}
+impl fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::Timeout => write!(f, "Timeout"),
+            Error::Full => write!(f, "Full"),
+            Error::NotStunMessage(ref s) => write!(f, "NotStunMessage({:?})", s),
+            Error::Unsupported(ref s) => write!(f, "Unsupported({:?})", s),
+            Error::Other(ref e, _) => write!(f, "Other({:?}, _)", e),
+            Error::Failed(ref failure) => write!(f, "Failed({:?})", failure),
+        }
+    }
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -29,6 +56,7 @@ impl fmt::Display for Error {
             Error::Full => write!(f, "Over capacity"),
             Error::NotStunMessage(ref s) => write!(f, "Not STUN message: {}", s),
             Error::Unsupported(ref s) => write!(f, "Unsupported feature: {}", s),
+            Error::Other(ref e, _) => write!(f, "{}", e),
             Error::Failed(ref failure) => write!(f, "{}", failure),
         }
     }
@@ -40,6 +68,7 @@ impl error::Error for Error {
             Error::Full => "Over capacity",
             Error::NotStunMessage(_) => "Not STUN message",
             Error::Unsupported(_) => "Unsupported feature",
+            Error::Other(ref e, _) => e,
             Error::Failed(_) => "Failed",
         }
     }
@@ -79,5 +108,18 @@ impl MaybeFailure for Error {
         } else {
             Err(self)
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn downcast_works() {
+        use std::io;
+        let inner = io::Error::new(io::ErrorKind::Other, "other");
+        let e = Error::other(inner);
+        assert!(e.get::<io::Error>().is_some());
     }
 }
