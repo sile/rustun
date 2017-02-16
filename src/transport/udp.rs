@@ -47,7 +47,6 @@ pub struct UdpSender {
 }
 impl UdpSender {
     pub fn new(socket: UdpSocket, peer: SocketAddr) -> Self {
-        println!("# {:?}", socket);
         let (rto_tx, rto_rx) = std_mpsc::channel();
         UdpSender {
             socket: socket,

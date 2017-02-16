@@ -13,3 +13,4 @@ failure = {git = "https://github.com/sile/failure.git"}
 
 [dev-dependencies]
 clap = "2"
+slog-term = "1"

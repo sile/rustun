@@ -1,12 +1,15 @@
 extern crate clap;
+#[macro_use]
+extern crate slog;
+extern crate slog_term;
 extern crate fibers;
 extern crate futures;
 extern crate rustun;
 
 use clap::{App, Arg};
+use slog::{Logger, DrainExt, Record, LevelFilter};
 use fibers::{Executor, InPlaceExecutor, Spawn};
-use futures::Future;
-use rustun::servers::UdpServer;
+use rustun::servers::UdpServerBuilder;
 
 fn main() {
     let matches = App::new("rustun_srv")
@@ -21,8 +24,13 @@ fn main() {
     let port = matches.value_of("PORT").unwrap();
     let addr = format!("0.0.0.0:{}", port).parse().expect("Invalid UDP address");
 
+    let place_fn = |info: &Record| format!("{}:{}", info.module(), info.line());
+    let logger = Logger::root(LevelFilter::new(slog_term::streamer().build(), slog::Level::Debug)
+                                  .fuse(),
+                              o!("place" => place_fn));
+
     let mut executor = InPlaceExecutor::new().unwrap();
-    let link = executor.spawn_link(UdpServer::new(addr).start());
-    let result = executor.run_future(link).unwrap();
+    let monitor = executor.spawn_monitor(UdpServerBuilder::new(addr).logger(logger).start());
+    let result = executor.run_fiber(monitor).unwrap();
     println!("RESULT: {:?}", result);
 }
