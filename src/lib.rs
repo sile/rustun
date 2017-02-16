@@ -4,10 +4,10 @@ extern crate rand;
 extern crate fibers;
 extern crate futures;
 #[macro_use]
-extern crate failure;
+extern crate track_err;
 extern crate handy_async;
 
-pub use error::Error;
+pub use error::{Error, ErrorKind};
 pub use client::Client;
 pub use server::HandleMessage;
 pub use method::Method;

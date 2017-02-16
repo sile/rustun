@@ -6,8 +6,9 @@ use fibers::net::UdpSocket;
 use fibers::net::futures::{RecvFrom, SendTo};
 use fibers::time::timer::{self, Timeout};
 use futures::{self, Future, Poll, Async, Fuse};
+use track_err::ErrorKindExt;
 
-use Error;
+use {Error, ErrorKind};
 use message::RawMessage;
 use constants;
 use super::{RecvMessage, SendMessage};
@@ -148,7 +149,7 @@ impl Future for Call {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             if let Some(ref mut future) = self.future {
-                may_fail!(future.poll().map_err(|(_, _, e)| Error::from(e)))?;
+                may_fail!(future.poll().map_err(|(_, _, e)| Error::from_cause(e)))?;
             } else if self.send_count < self.retransmission_spec.rc {
                 let bytes = self.message.clone();
                 let future = self.socket.clone().send_to(bytes, self.peer);
@@ -162,9 +163,9 @@ impl Future for Call {
                 self.future = Some(future.fuse());
                 continue;
             } else {
-                return Err(Error::Timeout);
+                return Err(ErrorKind::Timeout.into());
             }
-            if let Async::Ready(()) = may_fail!(self.timeout.poll().map_err(Error::failed))? {
+            if let Async::Ready(()) = may_fail!(self.timeout.poll().map_err(|e| ErrorKind::Failed.cause(e)))? {
                 self.future = None;
             } else {
                 return Ok(Async::NotReady)
@@ -179,7 +180,7 @@ impl Future for Cast {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        may_fail!(self.0.poll().map(|r| r.map(|_| ())).map_err(|(_, _, e)| Error::failed(e)))
+        may_fail!(self.0.poll().map(|r| r.map(|_| ())).map_err(|(_, _, e)| ErrorKind::Failed.cause(e)))
     }
 }
 
@@ -263,7 +264,7 @@ impl Future for UdpRecvMessage {
     type Item = (UdpReceiver, SocketAddr, RawMessage);
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let result = may_fail!(self.future.poll().map_err(|(_, _, e)| Error::from(e)))?;
+        let result = may_fail!(self.future.poll().map_err(|(_, _, e)| Error::from_cause(e)))?;
         if let Async::Ready((socket, buf, size, peer)) = result {
             match RawMessage::read_from(&mut &buf[..size]) {
                 Err(e) => {

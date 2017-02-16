@@ -3,14 +3,14 @@ extern crate fibers;
 extern crate futures;
 extern crate rustun;
 #[macro_use]
-extern crate failure;
+extern crate track_err;
 
 use clap::{App, Arg};
 use fibers::{Executor, InPlaceExecutor, Spawn};
 use fibers::net::UdpSocket;
 use futures::Future;
-use failure::Failure;
-use rustun::{Method, Client};
+use track_err::ErrorKindExt;
+use rustun::{Method, Client, ErrorKind};
 use rustun::rfc5389::{self, UdpClient};
 
 fn main() {
@@ -32,11 +32,12 @@ fn main() {
 
     let mut executor = InPlaceExecutor::new().unwrap();
     let handle = executor.handle();
-    let future = may_fail!(UdpSocket::bind("0.0.0.0:0".parse().unwrap()).map_err(Failure::new))
+    let future = UdpSocket::bind("0.0.0.0:0".parse().unwrap())
+        .map_err(|e| track_err!(ErrorKind::Failed.cause(e)))
         .and_then(move |socket| {
             let mut client = UdpClient::new(handle, socket, addr);
             let request = rfc5389::Method::binding().request();
-            fail_if_err!(client.call(request))
+            client.call(request).map_err(|e| track_err!(e))
         });
     let monitor = executor.spawn_monitor(future);
     match executor.run_fiber(monitor).unwrap() {

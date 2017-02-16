@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic;
 use fibers::time::timer::{self, Timeout};
 use futures::{Future, Poll, Async};
+use track_err::ErrorKindExt;
 
-use {Method, Attribute, Client, Error};
+use {Method, Attribute, Client, ErrorKind, Error};
 use message::{Indication, Request};
 use constants;
 
@@ -104,11 +105,11 @@ impl<F> Future for RateLimited<F>
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         if self.is_full {
-            return Err(Error::Full);
+            return Err(ErrorKind::Full.into());
         }
         if let Some(ref mut f) = self.wait_until {
             if let Async::NotReady = may_fail!(f.poll()
-                .map_err(|_| Error::failed("Timeout object aborted")))? {
+                .map_err(|_| ErrorKind::Failed.cause("Timeout object aborted")))? {
                 return Ok(Async::NotReady);
             }
         }

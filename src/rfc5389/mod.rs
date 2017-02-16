@@ -1,8 +1,9 @@
 use std::net::SocketAddr;
 use fibers::Spawn;
 use fibers::net::UdpSocket;
+use track_err::ErrorKindExt;
 
-use {Result, Error, Client};
+use {Result, Client, ErrorKind};
 use message::{self, Class, RawMessage};
 use attribute::{self, RawAttribute};
 use types::U12;
@@ -99,7 +100,7 @@ impl ::Attribute for Attribute {
             attributes::TYPE_XOR_MAPPED_ADDRESS => {
                 attributes::XorMappedAddress::decode(attr, message).map(From::from)
             }
-            t => Err(Error::unsupported(format!("Unknown attribute: type={}", t))),
+            t => Err(ErrorKind::Unsupported.cause(format!("Unknown attribute: type={}", t))),
         }
     }
     fn encode_value(&self, message: &RawMessage) -> Result<Vec<u8>> {

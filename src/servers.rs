@@ -59,7 +59,7 @@ impl Future for UdpServerInner {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match mem::replace(self, UdpServerInner::Done) {
             UdpServerInner::Bind(mut future, state) => {
-                if let Async::Ready(socket) = may_fail!(future.poll().map_err(Error::failed))? {
+                if let Async::Ready(socket) = may_fail!(future.poll().map_err(Error::from_cause))? {
                     let future = UdpServerLoop::new(socket, state);
                     *self = UdpServerInner::Loop(future);
                     self.poll()

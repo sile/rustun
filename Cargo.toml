@@ -9,7 +9,7 @@ fibers = "0.1"
 futures = "0.1"
 rand = "0.3"
 handy_async = "0.2"
-failure = {git = "https://github.com/sile/failure.git"}
+track_err = {git = "https://github.com/sile/track_err.git"}
 
 [dev-dependencies]
 clap = "2"

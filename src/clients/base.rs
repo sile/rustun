@@ -6,8 +6,9 @@ use fibers::Spawn;
 use fibers::sync::oneshot::{self, Link, Monitor, Monitored};
 use fibers::sync::mpsc;
 use futures::{Future, Poll, Async, Stream};
+use track_err::ErrorKindExt;
 
-use {Client, Method, Attribute, Message, Error, Result};
+use {Client, Method, Attribute, Message, Error, Result, ErrorKind};
 use transport::{SendMessage, RecvMessage};
 use transport::streams::MessageStream;
 use message::{Indication, Request, Response, RawMessage};
@@ -99,7 +100,9 @@ impl<R: RecvMessage> Future for RecvLoop<R> {
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         while let Async::Ready(command) =
-            may_fail!(self.command_rx.poll().map_err(|_| Error::failed("disconnected")))? {
+            may_fail!(self.command_rx
+                .poll()
+                .map_err(|_| ErrorKind::Failed.cause("disconnected")))? {
             let command = command.expect("unreachable");
             self.handle_command(command);
         }
@@ -175,8 +178,9 @@ impl<M, A, F> Future for BaseCallInner<M, A, F>
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         if let Async::Ready(_) = may_fail!(self.send_req.poll())? {
             // TODO:
-            Err(Error::Timeout)
-        } else if let Async::Ready(raw) = may_fail!(self.recv_res.poll().map_err(Error::from))? {
+            Err(ErrorKind::Timeout.into())
+        } else if let Async::Ready(raw) =
+            may_fail!(self.recv_res.poll().map_err(Error::from_cause))? {
             let message = may_fail!(Message::try_from_raw(raw))?;
             let response = may_fail!(message.try_into_response())?;
             self.command_tx = None;

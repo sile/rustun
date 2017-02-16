@@ -58,13 +58,13 @@ impl RawAttribute {
         &self.padding[..padding_len]
     }
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
-        let attr_type = may_fail!(reader.read_u16be().map_err(Error::from))?;
+        let attr_type = may_fail!(reader.read_u16be().map_err(Error::from_cause))?;
         let attr_type = Type::new(attr_type);
-        let value_len = may_fail!(reader.read_u16be().map_err(Error::from))? as u64;
-        let value = may_fail!(reader.take(value_len).read_all_bytes().map_err(Error::from))?;
+        let value_len = may_fail!(reader.read_u16be().map_err(Error::from_cause))? as u64;
+        let value = may_fail!(reader.take(value_len).read_all_bytes().map_err(Error::from_cause))?;
         let mut padding = [0; 4];
         let padding_len = ((4 - value_len % 4) % 4) as usize;
-        may_fail!(reader.read_exact(&mut padding[..padding_len]).map_err(Error::from))?;
+        may_fail!(reader.read_exact(&mut padding[..padding_len]).map_err(Error::from_cause))?;
         Ok(RawAttribute {
             attr_type: attr_type,
             value: value,
@@ -72,10 +72,10 @@ impl RawAttribute {
         })
     }
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        may_fail!(writer.write_u16be(self.attr_type.as_u16()).map_err(Error::from))?;
-        may_fail!(writer.write_u16be(self.value.len() as u16).map_err(Error::from))?;
-        may_fail!(writer.write_all(&self.value).map_err(Error::from))?;
-        may_fail!(writer.write_all(self.padding()).map_err(Error::from))?;
+        may_fail!(writer.write_u16be(self.attr_type.as_u16()).map_err(Error::from_cause))?;
+        may_fail!(writer.write_u16be(self.value.len() as u16).map_err(Error::from_cause))?;
+        may_fail!(writer.write_all(&self.value).map_err(Error::from_cause))?;
+        may_fail!(writer.write_all(self.padding()).map_err(Error::from_cause))?;
         Ok(())
     }
 }

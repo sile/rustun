@@ -5,8 +5,9 @@ use fibers::time::timer;
 use futures::{self, Future, BoxFuture};
 use handy_async::pattern::{Pattern, Window};
 use handy_async::io::{ReadFrom, WriteInto};
+use track_err::ErrorKindExt;
 
-use Error;
+use {Error, ErrorKind};
 use message::RawMessage;
 use constants;
 use super::{RecvMessage, SendMessage};
@@ -41,15 +42,15 @@ impl SendMessage for TcpSender {
             .and_then(move |_| {
                 let future = buf.write_into(stream)
                     .map(|_| ())
-                    .map_err(|e| Error::failed(e.into_error()));
-                may_fail!(future)
+                    .map_err(|e| ErrorKind::Failed.cause(e.into_error()));
+                future.map_err(|e| track_err!(e))
             })
             .boxed()
     }
     fn send_request(&mut self, message: RawMessage) -> Self::Future {
         let timeout = timer::timeout(self.request_timeout)
-            .map_err(Error::failed)
-            .and_then(|_| Err(Error::Timeout));
+            .map_err(|e| track_err!(ErrorKind::Failed.cause(e)))
+            .and_then(|_| Err(ErrorKind::Timeout.into()));
         let future = self.send_message(message);
         future.select(timeout).map_err(|(e, _)| e).and_then(|(_, next)| next).boxed()
     }
@@ -71,9 +72,10 @@ impl RecvMessage for TcpReceiver {
             buf.resize(20 + attrs_len, 0);
             Window::new(buf).set_start(20)
         });
-        may_fail!(pattern.read_from(self.0).map_err(|e| Error::failed(e.into_error())))
+        pattern.read_from(self.0)
+            .map_err(|e| track_err!(ErrorKind::Failed.cause(e.into_error())))
             .and_then(|(stream, buf)| {
-                let peer = may_fail!(stream.peer_addr().map_err(Error::from))?;
+                let peer = may_fail!(stream.peer_addr().map_err(Error::from_cause))?;
                 let message = may_fail!(RawMessage::read_from(&mut &buf.into_inner()[..]))?;
                 Ok((TcpReceiver(stream), peer, message))
             })
