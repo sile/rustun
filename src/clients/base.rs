@@ -6,7 +6,7 @@ use fibers::Spawn;
 use fibers::sync::oneshot::{self, Link, Monitor, Monitored};
 use fibers::sync::mpsc;
 use futures::{Future, Poll, Async, Stream};
-use track_err::ErrorKindExt;
+use trackable::error::ErrorKindExt;
 
 use {Client, Method, Attribute, Message, Error, Result, ErrorKind};
 use transport::{SendMessage, RecvMessage};
@@ -54,14 +54,14 @@ impl<M, A, S, R> Client<M, A> for BaseClient<S, R>
     type Call = BaseCall<M, A, S::Future>;
     type Cast = BaseCast<S::Future>;
     fn call(&mut self, message: Request<M, A>) -> Self::Call {
-        BaseCall(Some(may_fail!(message.into_inner().try_into_raw()).map(|message| {
+        BaseCall(Some(track_err!(message.into_inner().try_into_raw()).map(|message| {
             let id = message.transaction_id();
             let future = self.sender.send_request(message);
             BaseCallInner::new(id, future, self.command_tx.clone(), self.link.clone())
         })))
     }
     fn cast(&mut self, message: Indication<M, A>) -> Self::Cast {
-        BaseCast(Some(may_fail!(message.into_inner().try_into_raw())
+        BaseCast(Some(track_err!(message.into_inner().try_into_raw())
             .map(|message| self.sender.send_message(message))))
     }
 }
@@ -100,13 +100,13 @@ impl<R: RecvMessage> Future for RecvLoop<R> {
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         while let Async::Ready(command) =
-            may_fail!(self.command_rx
+            track_err!(self.command_rx
                 .poll()
                 .map_err(|_| ErrorKind::Failed.cause("disconnected")))? {
             let command = command.expect("unreachable");
             self.handle_command(command);
         }
-        while let Async::Ready(value) = may_fail!(self.message_rx.poll())? {
+        while let Async::Ready(value) = track_err!(self.message_rx.poll())? {
             let (addr, message) = value.expect("unreachable");
             self.handle_message(addr, message);
         }
@@ -176,13 +176,12 @@ impl<M, A, F> Future for BaseCallInner<M, A, F>
     type Item = Response<M, A>;
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if let Async::Ready(_) = may_fail!(self.send_req.poll())? {
+        if let Async::Ready(_) = track_err!(self.send_req.poll())? {
             // TODO:
             Err(ErrorKind::Timeout.into())
-        } else if let Async::Ready(raw) =
-            may_fail!(self.recv_res.poll().map_err(Error::from_cause))? {
-            let message = may_fail!(Message::try_from_raw(raw))?;
-            let response = may_fail!(message.try_into_response())?;
+        } else if let Async::Ready(raw) = track_try!(self.recv_res.poll()) {
+            let message = track_err!(Message::try_from_raw(raw))?;
+            let response = track_err!(message.try_into_response())?;
             self.command_tx = None;
             Ok(Async::Ready(response))
         } else {

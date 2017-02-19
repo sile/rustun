@@ -59,7 +59,7 @@ impl Future for UdpServerInner {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match mem::replace(self, UdpServerInner::Done) {
             UdpServerInner::Bind(mut future, state) => {
-                if let Async::Ready(socket) = may_fail!(future.poll().map_err(Error::from_cause))? {
+                if let Async::Ready(socket) = track_try!(future.poll()) {
                     let future = UdpServerLoop::new(socket, state);
                     *self = UdpServerInner::Loop(future);
                     self.poll()
@@ -69,7 +69,7 @@ impl Future for UdpServerInner {
                 }
             }
             UdpServerInner::Loop(mut future) =>{
-                if let Async::Ready(()) = may_fail!(future.poll())? {
+                if let Async::Ready(()) = track_err!(future.poll())? {
                     Ok(Async::Ready(()))
                 } else {
                     *self = UdpServerInner::Loop(future);
@@ -98,7 +98,7 @@ impl Future for UdpServerLoop {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match may_fail!(self.stream.poll())? {
+        match track_err!(self.stream.poll())? {
             Async::NotReady => Ok(Async::NotReady),
             Async::Ready(None) => {
                 info!(self.state.logger, "UdpServer terminated");

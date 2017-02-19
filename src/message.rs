@@ -1,9 +1,9 @@
 use std::io::{Read, Write, Cursor};
 use rand;
 use handy_async::sync_io::{ReadExt, WriteExt};
-use track_err::ErrorKindExt;
+use trackable::error::ErrorKindExt;
 
-use {Result, Error, Method, Attribute, ErrorKind};
+use {Result, Method, Attribute, ErrorKind};
 use types::{U12, TransactionId};
 use attribute::RawAttribute;
 use constants::MAGIC_COOKIE;
@@ -36,8 +36,9 @@ impl<M: Method> Type<M> {
     }
 
     pub fn from_u16(value: u16) -> Result<Self> {
-        fail_if!(value >> 14 != 0,
-                 ErrorKind::NotStunMessage.cause("First two-bits of STUN message must be 0"))?;
+        track_assert!(value >> 14 == 0,
+                      ErrorKind::NotStunMessage,
+                      "First two-bits of STUN message must be 0");
         let class = ((value >> 4) & 0b01) | ((value >> 7) & 0b10);
         let class = Class::from_u8(class as u8).unwrap();
         let method = (value & 0b0000_0000_1111) | ((value >> 1) & 0b0000_0111_0000) |
@@ -163,55 +164,55 @@ impl<M, A> Message<M, A>
             method: self.method().as_u12(),
         });
         for a in self.attributes.iter() {
-            let a = may_fail!(a.encode(&raw))?;
+            let a = track_err!(a.encode(&raw))?;
             raw.add_attribute(a);
         }
         Ok(raw)
     }
     pub fn try_from_raw(raw: RawMessage) -> Result<Self> {
-        let message_type = may_fail!(Type::from_u16(raw.message_type.as_u16()))?;
+        let message_type = track_err!(Type::from_u16(raw.message_type.as_u16()))?;
         let mut message = Message {
             message_type: message_type,
             transaction_id: raw.transaction_id,
             attributes: Vec::new(),
         };
         for a in raw.attributes.iter() {
-            let a = may_fail!(A::decode(a, &raw))?;
+            let a = track_err!(A::decode(a, &raw))?;
             message.add_attribute(a);
         }
         Ok(message)
     }
     pub fn try_into_response(self) -> Result<Response<M, A>> {
-        fail_if!(!self.class().is_response(),
-                 ErrorKind::Failed,
-                 "Not a response message: class={:?}",
-                 self.class())?;
+        track_assert!(self.class().is_response(),
+                      ErrorKind::Failed,
+                      "Not a response message: class={:?}",
+                      self.class());
         Ok(Response(self))
     }
 }
 impl RawMessage {
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
-        let message_type = may_fail!(reader.read_u16be().map_err(Error::from_cause))?;
-        let message_type = may_fail!(Type::from_u16(message_type))?;
-        let message_len = may_fail!(reader.read_u16be().map_err(Error::from_cause))?;
-        fail_if!(message_len % 4 != 0,
-                 ErrorKind::NotStunMessage.cause(
-                     format!("Unexpected message length: {} % 4 != 0", message_len)))?;
-        let magic_cookie = may_fail!(reader.read_u32be().map_err(Error::from_cause))?;
-        fail_if!(magic_cookie != MAGIC_COOKIE,
-                 ErrorKind::NotStunMessage.cause(
-                     format!("Unexpected magic cookie: actual={}, \
-                              expected={}",
-                             magic_cookie,
-                             MAGIC_COOKIE)))?;
+        let message_type = track_try!(reader.read_u16be());
+        let message_type = track_try!(Type::from_u16(message_type));
+        let message_len = track_try!(reader.read_u16be());
+        track_assert!(message_len % 4 == 0,
+                      ErrorKind::NotStunMessage,
+                      "Unexpected message length: {} % 4 != 0",
+                      message_len);
+        let magic_cookie = track_try!(reader.read_u32be());
+        track_assert!(magic_cookie == MAGIC_COOKIE,
+                      ErrorKind::NotStunMessage,
+                      "Unexpected magic cookie: actual={}, expected={}",
+                      magic_cookie,
+                      MAGIC_COOKIE);;
 
         let mut transaction_id: [u8; 12] = [0; 12];
-        may_fail!(reader.read_exact(&mut transaction_id).map_err(Error::from_cause))?;
+        track_try!(reader.read_exact(&mut transaction_id));
 
         let mut attrs = Vec::new();
         let mut reader = reader.take(message_len as u64);
         while reader.limit() > 0 {
-            let attr = may_fail!(RawAttribute::read_from(&mut reader))?;
+            let attr = track_err!(RawAttribute::read_from(&mut reader))?;
             attrs.push(attr);
         }
         Ok(Message {
@@ -222,23 +223,23 @@ impl RawMessage {
     }
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         let mut temp_writer = Cursor::new(vec![0; 20]);
-        may_fail!(temp_writer.write_u16be(self.message_type.as_u16()).map_err(Error::from_cause))?;
-        may_fail!(temp_writer.write_u16be(0).map_err(Error::from_cause))?; // dummy length
-        may_fail!(temp_writer.write_u32be(MAGIC_COOKIE).map_err(Error::from_cause))?;
-        may_fail!(temp_writer.write_all(&self.transaction_id).map_err(Error::from_cause))?;
+        track_try!(temp_writer.write_u16be(self.message_type.as_u16()));
+        track_try!(temp_writer.write_u16be(0)); // dummy length
+        track_try!(temp_writer.write_u32be(MAGIC_COOKIE));
+        track_try!(temp_writer.write_all(&self.transaction_id));
         for attr in self.attributes.iter() {
             attr.write_to(&mut temp_writer)?;
         }
         let attrs_len = temp_writer.get_ref().len() - 20;
-        fail_if!(attrs_len >= 0x10000,
-                 ErrorKind::Failed,
-                 "Too large message length: actual={}, limit=0xFFFF",
-                 attrs_len)?;
+        track_assert!(attrs_len < 0x10000,
+                      ErrorKind::Failed,
+                      "Too large message length: actual={}, limit=0xFFFF",
+                      attrs_len);
         temp_writer.set_position(2);
-        may_fail!(temp_writer.write_u16be(attrs_len as u16).map_err(Error::from_cause))?;
+        track_try!(temp_writer.write_u16be(attrs_len as u16));
 
         let buf = temp_writer.into_inner();
-        may_fail!(writer.write_all(&buf).map_err(Error::from_cause))?;
+        track_try!(writer.write_all(&buf));
         Ok(())
     }
 }

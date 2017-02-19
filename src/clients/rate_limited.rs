@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic;
 use fibers::time::timer::{self, Timeout};
 use futures::{Future, Poll, Async};
-use track_err::ErrorKindExt;
+use trackable::error::ErrorKindExt;
 
 use {Method, Attribute, Client, ErrorKind, Error};
 use message::{Indication, Request};
@@ -108,13 +108,13 @@ impl<F> Future for RateLimited<F>
             return Err(ErrorKind::Full.into());
         }
         if let Some(ref mut f) = self.wait_until {
-            if let Async::NotReady = may_fail!(f.poll()
+            if let Async::NotReady = track_err!(f.poll()
                 .map_err(|_| ErrorKind::Failed.cause("Timeout object aborted")))? {
                 return Ok(Async::NotReady);
             }
         }
         self.wait_until = None;
 
-        may_fail!(self.future.poll())
+        track_err!(self.future.poll())
     }
 }

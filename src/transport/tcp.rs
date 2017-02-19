@@ -5,7 +5,7 @@ use fibers::time::timer;
 use futures::{self, Future, BoxFuture};
 use handy_async::pattern::{Pattern, Window};
 use handy_async::io::{ReadFrom, WriteInto};
-use track_err::ErrorKindExt;
+use trackable::error::ErrorKindExt;
 
 use {Error, ErrorKind};
 use message::RawMessage;
@@ -36,20 +36,20 @@ impl SendMessage for TcpSender {
     type Future = TcpSendMessage;
     fn send_message(&mut self, message: RawMessage) -> Self::Future {
         let mut buf = Vec::new();
-        let result = may_fail!(message.write_to(&mut buf));
+        let result = track_err!(message.write_to(&mut buf));
         let stream = self.stream.clone();
         futures::done(result)
             .and_then(move |_| {
                 let future = buf.write_into(stream)
                     .map(|_| ())
                     .map_err(|e| ErrorKind::Failed.cause(e.into_error()));
-                future.map_err(|e| track_err!(e))
+                track_err!(future)
             })
             .boxed()
     }
     fn send_request(&mut self, message: RawMessage) -> Self::Future {
         let timeout = timer::timeout(self.request_timeout)
-            .map_err(|e| track_err!(ErrorKind::Failed.cause(e)))
+            .map_err(|e| track!(ErrorKind::Failed.cause(e)))
             .and_then(|_| Err(ErrorKind::Timeout.into()));
         let future = self.send_message(message);
         future.select(timeout).map_err(|(e, _)| e).and_then(|(_, next)| next).boxed()
@@ -73,10 +73,10 @@ impl RecvMessage for TcpReceiver {
             Window::new(buf).set_start(20)
         });
         pattern.read_from(self.0)
-            .map_err(|e| track_err!(ErrorKind::Failed.cause(e.into_error())))
+            .map_err(|e| track!(Error::from_cause(e.into_error())))
             .and_then(|(stream, buf)| {
-                let peer = may_fail!(stream.peer_addr().map_err(Error::from_cause))?;
-                let message = may_fail!(RawMessage::read_from(&mut &buf.into_inner()[..]))?;
+                let peer = track_try!(stream.peer_addr());
+                let message = track_try!(RawMessage::read_from(&mut &buf.into_inner()[..]));
                 Ok((TcpReceiver(stream), peer, message))
             })
             .boxed()

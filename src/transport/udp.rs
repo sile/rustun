@@ -6,7 +6,7 @@ use fibers::net::UdpSocket;
 use fibers::net::futures::{RecvFrom, SendTo};
 use fibers::time::timer::{self, Timeout};
 use futures::{self, Future, Poll, Async, Fuse};
-use track_err::ErrorKindExt;
+use trackable::error::ErrorKindExt;
 
 use {Error, ErrorKind};
 use message::RawMessage;
@@ -149,7 +149,7 @@ impl Future for Call {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             if let Some(ref mut future) = self.future {
-                may_fail!(future.poll().map_err(|(_, _, e)| Error::from_cause(e)))?;
+                track_try!(future.poll().map_err(|(_, _, e)| e));
             } else if self.send_count < self.retransmission_spec.rc {
                 let bytes = self.message.clone();
                 let future = self.socket.clone().send_to(bytes, self.peer);
@@ -165,7 +165,7 @@ impl Future for Call {
             } else {
                 return Err(ErrorKind::Timeout.into());
             }
-            if let Async::Ready(()) = may_fail!(self.timeout.poll().map_err(|e| ErrorKind::Failed.cause(e)))? {
+            if let Async::Ready(()) = track_err!(self.timeout.poll().map_err(|e| ErrorKind::Failed.cause(e)))? {
                 self.future = None;
             } else {
                 return Ok(Async::NotReady)
@@ -180,7 +180,7 @@ impl Future for Cast {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        may_fail!(self.0.poll().map(|r| r.map(|_| ())).map_err(|(_, _, e)| ErrorKind::Failed.cause(e)))
+        track_err!(self.0.poll().map(|r| r.map(|_| ())).map_err(|(_, _, e)| ErrorKind::Failed.cause(e)))
     }
 }
 
@@ -193,7 +193,7 @@ impl UdpSendMessage {
            retransmission_spec: Option<UdpRetransmissionSpec>)
            -> Self {
         let mut buf = Vec::new();
-        let inner = match may_fail!(message.write_to(&mut buf)) {
+        let inner = match track_err!(message.write_to(&mut buf)) {
             Err(e) => SendInner::Failed(futures::failed(e)),
             Ok(_) => {
                 if let Some(retransmission_spec) = retransmission_spec {
@@ -264,7 +264,7 @@ impl Future for UdpRecvMessage {
     type Item = (UdpReceiver, SocketAddr, RawMessage);
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let result = may_fail!(self.future.poll().map_err(|(_, _, e)| Error::from_cause(e)))?;
+        let result = track_try!(self.future.poll().map_err(|(_, _, e)| e));
         if let Async::Ready((socket, buf, size, peer)) = result {
             match RawMessage::read_from(&mut &buf[..size]) {
                 Err(e) => {

@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use fibers::Spawn;
 use fibers::net::UdpSocket;
-use track_err::ErrorKindExt;
+use trackable::error::ErrorKindExt;
 
 use {Result, Client, ErrorKind};
 use message::{self, Class, RawMessage};

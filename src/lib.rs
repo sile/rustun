@@ -4,7 +4,7 @@ extern crate rand;
 extern crate fibers;
 extern crate futures;
 #[macro_use]
-extern crate track_err;
+extern crate trackable;
 extern crate handy_async;
 
 pub use error::{Error, ErrorKind};

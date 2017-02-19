@@ -14,7 +14,7 @@ impl<T: RecvMessage> Stream for MessageStream<T> {
     type Item = (SocketAddr, RawMessage);
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        if let Async::Ready((receiver, addr, message)) = may_fail!(self.0.poll())? {
+        if let Async::Ready((receiver, addr, message)) = track_err!(self.0.poll())? {
             self.0 = receiver.recv_message();
             Ok(Async::Ready(Some((addr, message))))
         } else {

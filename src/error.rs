@@ -1,8 +1,8 @@
 use std::io;
-use track_err;
+use trackable::error::{self, IntoTrackableError, TrackableError, ErrorKindExt};
 use fibers::sync::oneshot::MonitorError;
 
-pub type Error = track_err::Error<ErrorKind>;
+pub type Error = TrackableError<ErrorKind>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ErrorKind {
@@ -12,17 +12,14 @@ pub enum ErrorKind {
     Unsupported,
     Failed,
 }
-impl track_err::ErrorKind for ErrorKind {}
-impl<'a> From<&'a MonitorError<Error>> for ErrorKind {
-    fn from(f: &'a MonitorError<Error>) -> Self {
-        match *f {
-            MonitorError::Failed(ref e) => *e.kind(),
-            MonitorError::Aborted => ErrorKind::Failed,
-        }
+impl error::ErrorKind for ErrorKind {}
+impl IntoTrackableError<MonitorError<Error>> for ErrorKind {
+    fn into_trackable_error(f: MonitorError<Error>) -> Error {
+        f.unwrap_or(ErrorKind::Failed.into())
     }
 }
-impl<'a> From<&'a io::Error> for ErrorKind {
-    fn from(_: &'a io::Error) -> Self {
-        ErrorKind::Failed
+impl IntoTrackableError<io::Error> for ErrorKind {
+    fn into_trackable_error(f: io::Error) -> Error {
+        ErrorKind::Failed.cause(f)
     }
 }
