@@ -100,13 +100,19 @@ impl<R: RecvMessage> Future for RecvLoop<R> {
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         while let Async::Ready(command) =
-            track_err!(self.command_rx
+            track_try!(self.command_rx
                 .poll()
-                .map_err(|_| ErrorKind::Failed.cause("disconnected")))? {
+                .map_err(|_| ErrorKind::Failed.cause("disconnected"))) {
             let command = command.expect("unreachable");
             self.handle_command(command);
         }
-        while let Async::Ready(value) = track_err!(self.message_rx.poll())? {
+        while let Async::Ready(value) =
+            track_try!(self.message_rx.poll().map_err(|e| {
+                for (_, m) in self.transactions.drain() {
+                    m.exit(Err(e.clone()));
+                }
+                e
+            })) {
             let (addr, message) = value.expect("unreachable");
             self.handle_message(addr, message);
         }
@@ -176,12 +182,12 @@ impl<M, A, F> Future for BaseCallInner<M, A, F>
     type Item = Response<M, A>;
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if let Async::Ready(_) = track_err!(self.send_req.poll())? {
+        if let Async::Ready(_) = track_try!(self.send_req.poll()) {
             // TODO:
             Err(ErrorKind::Timeout.into())
         } else if let Async::Ready(raw) = track_try!(self.recv_res.poll()) {
-            let message = track_err!(Message::try_from_raw(raw))?;
-            let response = track_err!(message.try_into_response())?;
+            let message = track_try!(Message::try_from_raw(raw));
+            let response = track_try!(message.try_into_response());
             self.command_tx = None;
             Ok(Async::Ready(response))
         } else {

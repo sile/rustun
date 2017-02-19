@@ -51,14 +51,14 @@ impl Attribute for XorMappedAddress {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_XOR_MAPPED_ADDRESS,
                          ErrorKind::Failed);
-        let xor_addr = track_err!(read_socket_addr(&mut attr.value()))?;
+        let xor_addr = track_try!(read_socket_addr(&mut attr.value()));
         let addr = Self::xor_addr(xor_addr);
         Ok(Self::new(addr))
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
         let xor_addr = Self::xor_addr(self.0);
         let mut buf = Vec::new();
-        track_err!(write_socket_addr(&mut buf, xor_addr))?;
+        track_try!(write_socket_addr(&mut buf, xor_addr));
         Ok(buf)
     }
 }

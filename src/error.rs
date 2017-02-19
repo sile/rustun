@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::mpsc::RecvError;
 use trackable::error::{self, IntoTrackableError, TrackableError, ErrorKindExt};
 use fibers::sync::oneshot::MonitorError;
 
@@ -20,6 +21,11 @@ impl IntoTrackableError<MonitorError<Error>> for ErrorKind {
 }
 impl IntoTrackableError<io::Error> for ErrorKind {
     fn into_trackable_error(f: io::Error) -> Error {
+        ErrorKind::Failed.cause(f)
+    }
+}
+impl IntoTrackableError<RecvError> for ErrorKind {
+    fn into_trackable_error(f: RecvError) -> Error {
         ErrorKind::Failed.cause(f)
     }
 }

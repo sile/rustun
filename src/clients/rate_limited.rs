@@ -108,8 +108,8 @@ impl<F> Future for RateLimited<F>
             return Err(ErrorKind::Full.into());
         }
         if let Some(ref mut f) = self.wait_until {
-            if let Async::NotReady = track_err!(f.poll()
-                .map_err(|_| ErrorKind::Failed.cause("Timeout object aborted")))? {
+            if let Async::NotReady = track_try!(f.poll()
+                .map_err(|_| ErrorKind::Failed.cause("Timeout object aborted"))) {
                 return Ok(Async::NotReady);
             }
         }

@@ -164,20 +164,20 @@ impl<M, A> Message<M, A>
             method: self.method().as_u12(),
         });
         for a in self.attributes.iter() {
-            let a = track_err!(a.encode(&raw))?;
+            let a = track_try!(a.encode(&raw));
             raw.add_attribute(a);
         }
         Ok(raw)
     }
     pub fn try_from_raw(raw: RawMessage) -> Result<Self> {
-        let message_type = track_err!(Type::from_u16(raw.message_type.as_u16()))?;
+        let message_type = track_try!(Type::from_u16(raw.message_type.as_u16()));
         let mut message = Message {
             message_type: message_type,
             transaction_id: raw.transaction_id,
             attributes: Vec::new(),
         };
         for a in raw.attributes.iter() {
-            let a = track_err!(A::decode(a, &raw))?;
+            let a = track_try!(A::decode(a, &raw));
             message.add_attribute(a);
         }
         Ok(message)
@@ -212,7 +212,7 @@ impl RawMessage {
         let mut attrs = Vec::new();
         let mut reader = reader.take(message_len as u64);
         while reader.limit() > 0 {
-            let attr = track_err!(RawAttribute::read_from(&mut reader))?;
+            let attr = track_try!(RawAttribute::read_from(&mut reader));
             attrs.push(attr);
         }
         Ok(Message {

@@ -6,7 +6,6 @@ use fibers::net::UdpSocket;
 use fibers::net::futures::{RecvFrom, SendTo};
 use fibers::time::timer::{self, Timeout};
 use futures::{self, Future, Poll, Async, Fuse};
-use trackable::error::ErrorKindExt;
 
 use {Error, ErrorKind};
 use message::RawMessage;
@@ -165,7 +164,7 @@ impl Future for Call {
             } else {
                 return Err(ErrorKind::Timeout.into());
             }
-            if let Async::Ready(()) = track_err!(self.timeout.poll().map_err(|e| ErrorKind::Failed.cause(e)))? {
+            if let Async::Ready(()) = track_try!(self.timeout.poll()) {
                 self.future = None;
             } else {
                 return Ok(Async::NotReady)
@@ -180,7 +179,7 @@ impl Future for Cast {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        track_err!(self.0.poll().map(|r| r.map(|_| ())).map_err(|(_, _, e)| ErrorKind::Failed.cause(e)))
+        track_err!(self.0.poll().map(|r| r.map(|_| ())).map_err(|(_, _, e)| e))
     }
 }
 
