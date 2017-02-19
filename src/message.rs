@@ -123,6 +123,20 @@ impl<M, A> Request<M, A> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Response<M, A>(Message<M, A>);
+impl<M, A> Response<M, A>
+    where M: Method,
+          A: Attribute
+{
+    pub fn new_success(method: M) -> Self {
+        Response(Message::new(Type {
+            class: Class::SuccessResponse,
+            method: method,
+        }))
+    }
+    pub fn inner_mut(&mut self) -> &mut Message<M, A> {
+        &mut self.0
+    }
+}
 impl<M, A> Response<M, A> {
     pub fn into_inner(self) -> Message<M, A> {
         self.0
@@ -151,6 +165,9 @@ impl<M, A> Message<M, A>
     }
     pub fn method(&self) -> &M {
         &self.message_type.method
+    }
+    pub fn is_permitted(&self) -> bool {
+        self.method().permits_class(self.class())
     }
     pub fn transaction_id(&self) -> TransactionId {
         self.transaction_id
@@ -188,6 +205,20 @@ impl<M, A> Message<M, A>
                       "Not a response message: class={:?}",
                       self.class());
         Ok(Response(self))
+    }
+    pub fn try_into_request(self) -> Result<Request<M, A>> {
+        track_assert!(self.class().is_request(),
+                      ErrorKind::Failed,
+                      "Not a request message: class={:?}",
+                      self.class());
+        Ok(Request(self))
+    }
+    pub fn try_into_indication(self) -> Result<Indication<M, A>> {
+        track_assert!(self.class().is_indication(),
+                      ErrorKind::Failed,
+                      "Not a indication message: class={:?}",
+                      self.class());
+        Ok(Indication(self))
     }
 }
 impl RawMessage {

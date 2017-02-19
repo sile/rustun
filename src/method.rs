@@ -1,6 +1,6 @@
 use Attribute;
 use types::U12;
-use message::{Class, Request};
+use message::{Class, Request, Response};
 
 pub trait Method: Sized {
     fn from_u12(value: U12) -> Option<Self>;
@@ -10,6 +10,12 @@ pub trait Method: Sized {
     fn request<A: Attribute>(self) -> Request<Self, A> {
         Request::new(self)
     }
+    fn success_response<A: Attribute>(self) -> Response<Self, A> {
+        Response::new_success(self)
+    }
+    // fn indication<A: Attribute>(self) -> Indication<Self, A> {
+    //     Indication::new(self)
+    // }
 }
 impl Method for U12 {
     fn from_u12(value: U12) -> Option<Self> {

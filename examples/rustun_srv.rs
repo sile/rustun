@@ -10,6 +10,7 @@ use clap::{App, Arg};
 use slog::{Logger, DrainExt, Record, LevelFilter};
 use fibers::{Executor, InPlaceExecutor, Spawn};
 use rustun::servers::UdpServerBuilder;
+use rustun::rfc5389::handlers::DefaultMessageHandler;
 
 fn main() {
     let matches = App::new("rustun_srv")
@@ -30,7 +31,10 @@ fn main() {
                               o!("place" => place_fn));
 
     let mut executor = InPlaceExecutor::new().unwrap();
-    let monitor = executor.spawn_monitor(UdpServerBuilder::new(addr).logger(logger).start());
+    let spawner = executor.handle();
+    let monitor = executor.spawn_monitor(UdpServerBuilder::new(addr)
+        .logger(logger)
+        .start(spawner.boxed(), DefaultMessageHandler));
     let result = executor.run_fiber(monitor).unwrap();
     println!("RESULT: {:?}", result);
 }

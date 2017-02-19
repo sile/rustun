@@ -23,6 +23,8 @@ mod common;
 pub trait SendMessage {
     type Future: Future<Item = (), Error = Error>;
     fn send_message(&mut self, message: RawMessage) -> Self::Future;
+
+    // TODO: split to SendRequest trait
     fn send_request(&mut self, message: RawMessage) -> Self::Future;
 }
 

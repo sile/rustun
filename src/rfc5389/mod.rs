@@ -11,6 +11,7 @@ use clients;
 
 pub mod methods;
 pub mod attributes;
+pub mod handlers;
 
 type UdpClientInner = clients::RateLimitedClient<clients::UdpClient, Method, Attribute>;
 
