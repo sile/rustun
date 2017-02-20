@@ -116,8 +116,21 @@ impl<M, A> Request<M, A>
     }
 }
 impl<M, A> Request<M, A> {
+    pub fn inner_ref(&self) -> &Message<M, A> {
+        &self.0
+    }
     pub fn into_inner(self) -> Message<M, A> {
         self.0
+    }
+    pub fn into_success_response(self) -> Response<M, A> {
+        Response(Message {
+            message_type: Type {
+                class: Class::SuccessResponse,
+                method: self.0.message_type.method,
+            },
+            transaction_id: self.0.transaction_id,
+            attributes: Vec::new(),
+        })
     }
 }
 
@@ -140,6 +153,9 @@ impl<M, A> Response<M, A>
 impl<M, A> Response<M, A> {
     pub fn into_inner(self) -> Message<M, A> {
         self.0
+    }
+    pub fn inner_ref(&self) -> &Message<M, A> {
+        &self.0
     }
 }
 
@@ -176,10 +192,14 @@ impl<M, A> Message<M, A>
         self.attributes.push(attribute.into());
     }
     pub fn try_into_raw(self) -> Result<RawMessage> {
-        let mut raw = RawMessage::new(Type {
-            class: self.class(),
-            method: self.method().as_u12(),
-        });
+        let mut raw = RawMessage {
+            message_type: Type {
+                class: self.class(),
+                method: self.method().as_u12(),
+            },
+            transaction_id: self.transaction_id,
+            attributes: Vec::new(),
+        };
         for a in self.attributes.iter() {
             let a = track_try!(a.encode(&raw));
             raw.add_attribute(a);

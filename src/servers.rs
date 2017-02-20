@@ -111,19 +111,19 @@ impl<H: HandleMessage> UdpServerLoop<H> {
                       message.class(),
                       message.method().as_u12());
         if message.class().is_request() {
-            let mut sender = ::transport::UdpSender::new(self.socket.clone(), client); // XXX: over spec
+            // XXX: over spec
+            let mut sender = ::transport::UdpSender::new(self.socket.clone(), client);
             let request = message.try_into_request().unwrap();
             self.state.spawner.spawn(self.state
                 .handler
                 .handle_call(client, request)
-                                     .and_then(move |response| {
-                                         println!("# IN RESPONSE");
+                .and_then(move |response| {
                     // TODO: handle error
                     let raw = response.into_inner().try_into_raw().unwrap();
-                    let future = sender.send_message(raw).map_err(|e| { println!("Error: {}", e); ()});
-                    future.then(move |_| {
-                        println!("# DONE");
-                        let _ = sender; Ok(())})
+                    sender.send_message(raw).map_err(|e| {
+                        println!("Error: {}", e);
+                        ()
+                    })
                 }));
         } else if message.class().is_indication() {
             let indication = message.try_into_indication().unwrap();

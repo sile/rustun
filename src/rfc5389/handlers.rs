@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use futures::{self, Future, BoxFuture};
 
-use {HandleMessage, Method};
+use HandleMessage;
 use message::{Request, Response, Indication};
 
 #[derive(Debug)]
@@ -13,12 +13,11 @@ impl HandleMessage for DefaultMessageHandler {
     type HandleCast = BoxFuture<(), ()>;
     fn handle_call(&mut self,
                    client: SocketAddr,
-                   message: Request<Self::Method, Self::Attribute>)
+                   request: Request<Self::Method, Self::Attribute>)
                    -> Self::HandleCall {
-        let message = message.into_inner();
-        match *message.method() {
+        match *request.inner_ref().method() {
             super::Method::Binding(_) => {
-                let mut response = super::Method::binding().success_response();
+                let mut response = request.into_success_response();
                 response.inner_mut().add_attribute(
                     super::Attribute::XorMappedAddress(
                         super::attributes::XorMappedAddress::new(client)));
