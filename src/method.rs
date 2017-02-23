@@ -1,6 +1,7 @@
 use Attribute;
 use types::U12;
 use message::{Class, Request, Response};
+use message2;
 
 pub trait Method: Sized {
     fn from_u12(value: U12) -> Option<Self>;
@@ -26,5 +27,23 @@ impl Method for U12 {
     }
     fn permits_class(&self, _class: Class) -> bool {
         true
+    }
+}
+
+pub trait Requestable: Method + Sized {
+    fn request<M, A>(self) -> message2::Request<M, A>
+        where M: From<Self> + Method,
+              A: Attribute
+    {
+        message2::Request::new(self)
+    }
+}
+
+pub trait Indicatable: Method + Sized {
+    fn indication<M, A>(self) -> message2::Indication<M, A>
+        where M: From<Self> + Method,
+              A: Attribute
+    {
+        message2::Indication::new(self)
     }
 }

@@ -41,3 +41,27 @@ impl U12 {
 /// >
 /// > ([RFC 5389 -- 3. Overview of Operation](https://tools.ietf.org/html/rfc5389#section-3))
 pub type TransactionId = [u8; 12];
+
+#[derive(Debug, Clone)]
+pub struct ErrorCode {
+    code: u16,
+    reason_phrase: String,
+}
+impl ErrorCode {
+    pub fn new(code: u16, reason_phrase: &str) -> Option<Self> {
+        if 300 <= code && code < 600 {
+            Some(ErrorCode {
+                code: code,
+                reason_phrase: reason_phrase.to_string(),
+            })
+        } else {
+            None
+        }
+    }
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+    pub fn reason_phrase(&self) -> &str {
+        &self.reason_phrase
+    }
+}

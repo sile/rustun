@@ -18,13 +18,14 @@ pub mod types;
 pub mod clients;
 pub mod servers;
 pub mod message;
+pub mod message2;
 pub mod transport;
 pub mod attribute;
 pub mod constants;
+pub mod method;
 pub mod rfc5389;
 
 mod error;
-mod method;
 mod client;
 mod server;
 
