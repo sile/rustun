@@ -4,7 +4,9 @@ use {Method, Attribute};
 use types::{TransactionId, ErrorCode};
 use method::{Requestable, Indicatable};
 
-pub mod raw;
+pub use self::raw::{RawMessage, Class};
+
+mod raw;
 
 #[derive(Debug, Clone)]
 pub struct Request<M, A> {
