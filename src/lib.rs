@@ -8,14 +8,14 @@ extern crate trackable;
 extern crate handy_async;
 
 pub use error::{Error, ErrorKind};
-//pub use client::Client;
+pub use client::Client;
 // pub use server::HandleMessage;
 pub use method::Method;
 pub use attribute::Attribute;
 pub use transport::Transport;
 
 pub mod types;
-//pub mod clients;
+pub mod clients;
 // pub mod servers;
 pub mod message;
 pub mod transport;
@@ -25,7 +25,7 @@ pub mod method;
 //pub mod rfc5389;
 
 mod error;
-//mod client;
+mod client;
 //mod server;
 
 pub type Result<T> = ::std::result::Result<T, Error>;

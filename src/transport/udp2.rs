@@ -2,7 +2,6 @@ use std::cmp;
 use std::net::SocketAddr;
 use std::collections::BinaryHeap;
 use std::time::{SystemTime, Duration};
-use fibers::Spawn;
 use fibers::net::UdpSocket;
 use fibers::net::futures::{UdpSocketBind, RecvFrom};
 use fibers::sync::oneshot::Link;
@@ -60,7 +59,7 @@ impl UdpTransportBuilder {
         self.recv_buffer_size = size;
         self
     }
-    pub fn finish<S: Spawn>(&self, spawner: &S) -> UdpTransportBind {
+    pub fn finish(&self) -> UdpTransportBind {
         let sink_params = SinkParams {
             rto: self.rto,
             rto_cache_duration: self.rto_cache_duration,
@@ -307,7 +306,7 @@ struct SendItem {
     peer: SocketAddr,
     message: RawMessage,
     rto: Option<Duration>,
-    link: Link<(), (), (), Error>,
+    link: Link<(), Error, (), ()>,
 }
 impl PartialOrd for SendItem {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {

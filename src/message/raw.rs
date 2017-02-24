@@ -4,7 +4,7 @@ use handy_async::sync_io::{ReadExt, WriteExt};
 use {Result, Method, Attribute, ErrorKind};
 use types::{U12, TransactionId};
 use attribute::RawAttribute;
-use message::{Request, Indication, SuccessResponse, ErrorResponse};
+use message::{Request, Indication, SuccessResponse, ErrorResponse, Response};
 use constants::MAGIC_COOKIE;
 
 #[derive(Debug, Clone)]
@@ -111,13 +111,7 @@ impl RawMessage {
     {
         panic!()
     }
-    pub fn try_into_success_response<M, A>(self) -> Result<SuccessResponse<M, A>>
-        where M: Method,
-              A: Attribute
-    {
-        panic!()
-    }
-    pub fn try_into_error_response<M, A>(self) -> Result<ErrorResponse<M, A>>
+    pub fn try_into_response<M, A>(self) -> Result<Response<M, A>>
         where M: Method,
               A: Attribute
     {
