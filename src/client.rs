@@ -41,4 +41,11 @@ impl<M, A> Client<M, A> for BoxClient<M, A>
     fn cast(&mut self, message: Indication<M, A>) -> Self::Cast {
         (self.0)(Err(message)).err().unwrap()
     }
+    fn boxed(self) -> BoxClient<M, A>
+        where Self: Sized + Send + 'static,
+              Self::Call: Send + 'static,
+              Self::Cast: Send + 'static
+    {
+        self
+    }
 }

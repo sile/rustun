@@ -8,6 +8,8 @@ pub use self::raw::{RawMessage, Class};
 
 mod raw;
 
+pub type Response<M, A> = Result<SuccessResponse<M, A>, ErrorResponse<M, A>>;
+
 #[derive(Debug, Clone)]
 pub struct Request<M, A> {
     method: M,

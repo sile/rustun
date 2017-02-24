@@ -1,214 +1,109 @@
 use std::net::SocketAddr;
-use std::marker::PhantomData;
+use std::time::Duration;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::marker::PhantomData;
 use fibers::Spawn;
-use fibers::sync::oneshot::{self, Link, Monitor, Monitored};
 use fibers::sync::mpsc;
-use futures::{Future, Poll, Async, Stream};
-use trackable::error::ErrorKindExt;
+use fibers::sync::oneshot::{Monitor, Monitored};
+use futures::{self, Future, Poll, Async, BoxFuture};
+use futures::future::{Either, Failed};
 
-use {Client, Method, Attribute, Message, Error, Result, ErrorKind};
-use transport::{SendMessage, RecvMessage};
-use transport::streams::MessageStream;
-use message::{Indication, Request, Response, RawMessage};
+use {Client, Transport, Method, Attribute, Error, Result};
+use message::{Request, Indication, Response, RawMessage};
 use types::TransactionId;
+use constants;
 
 #[derive(Debug)]
 enum Command {
-    StartTransaction(TransactionId, Monitored<RawMessage, Error>),
-    AbortTransaction(TransactionId),
+    Cast(RawMessage),
+    Call(RawMessage, Monitored<RawMessage, Error>),
 }
-
-type RecvLoopLink = Arc<Link<(), (), (), Error>>;
 
 #[derive(Debug)]
-pub struct BaseClient<S, R> {
-    sender: S,
+pub struct BaseClient<T> {
+    server: SocketAddr,
+    request_timeout: Duration,
     command_tx: mpsc::Sender<Command>,
-    link: RecvLoopLink,
-    _phantom: PhantomData<R>,
+    _phantom: PhantomData<T>,
 }
-impl<S, R> BaseClient<S, R>
-    where S: SendMessage,
-          R: RecvMessage + 'static,
-          R::Future: Send + 'static
+impl<T> BaseClient<T>
+    where T: Transport + Send + 'static,
+          T::RecvMessage: Send + 'static
 {
-    pub fn new<T: Spawn>(spawner: T, sender: S, receiver: R) -> Self {
+    pub fn new<S: Spawn>(spawner: &S, server: SocketAddr, transport: T) -> Self {
         let (command_tx, command_rx) = mpsc::channel();
-        let link = spawner.spawn_link(RecvLoop::new(receiver, command_rx));
+        spawner.spawn(BaseClientLoop::new(server, transport, command_rx));
         BaseClient {
-            sender: sender,
+            server: server,
             command_tx: command_tx,
-            link: Arc::new(link),
+            request_timeout: Duration::from_millis(constants::DEFAULT_TI_MS),
             _phantom: PhantomData,
         }
     }
+    pub fn set_request_timeout(&mut self, timeout: Duration) {
+        self.request_timeout = timeout;
+    }
 }
-impl<M, A, S, R> Client<M, A> for BaseClient<S, R>
-    where M: Method,
-          A: Attribute,
-          S: SendMessage,
-          R: RecvMessage
-{
-    type Call = BaseCall<M, A, S::Future>;
-    type Cast = BaseCast<S::Future>;
+impl<T: Transport, M: Method, A: Attribute> Client<M, A> for BaseClient<T> {
+    type Call = BaseCall<T, M, A>;
+    type Cast = BaseCast<T>;
     fn call(&mut self, message: Request<M, A>) -> Self::Call {
-        BaseCall(Some(track_err!(message.into_inner().try_into_raw()).map(|message| {
-            let id = message.transaction_id();
-            let future = self.sender.send_request(message);
-            BaseCallInner::new(id, future, self.command_tx.clone(), self.link.clone())
-        })))
+        BaseCall::new(self, message)
     }
     fn cast(&mut self, message: Indication<M, A>) -> Self::Cast {
-        BaseCast(Some(track_err!(message.into_inner().try_into_raw())
-            .map(|message| self.sender.send_message(message))))
+        BaseCast::new(self, message)
     }
 }
 
-struct RecvLoop<R: RecvMessage> {
-    message_rx: MessageStream<R>,
+struct BaseClientLoop<T: Transport> {
+    server: SocketAddr,
+    transport: T,
     command_rx: mpsc::Receiver<Command>,
-    transactions: HashMap<TransactionId, Monitored<RawMessage, Error>>,
+    recv_message: T::RecvMessage,
 }
-impl<R: RecvMessage> RecvLoop<R> {
-    fn new(receiver: R, command_rx: mpsc::Receiver<Command>) -> Self {
-        RecvLoop {
-            message_rx: receiver.into_stream(),
+impl<T: Transport> BaseClientLoop<T> {
+    fn new(server: SocketAddr, mut transport: T, command_rx: mpsc::Receiver<Command>) -> Self {
+        let recv_message = transport.recv_message();
+        BaseClientLoop {
+            server: server,
+            transport: transport,
             command_rx: command_rx,
-            transactions: HashMap::new(),
-        }
-    }
-    fn handle_command(&mut self, command: Command) {
-        match command {
-            Command::StartTransaction(id, monitored) => {
-                self.transactions.insert(id, monitored);
-            }
-            Command::AbortTransaction(id) => {
-                self.transactions.remove(&id);
-            }
-        }
-    }
-    fn handle_message(&mut self, _server: SocketAddr, message: RawMessage) {
-        if let Some(monitored) = self.transactions.remove(&message.transaction_id()) {
-            monitored.exit(Ok(message));
+            recv_message: recv_message,
         }
     }
 }
-impl<R: RecvMessage> Future for RecvLoop<R> {
+impl<T: Transport> Future for BaseClientLoop<T> {
     type Item = ();
-    type Error = Error;
+    type Error = ();
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        while let Async::Ready(command) =
-            track_try!(self.command_rx
-                .poll()
-                .map_err(|_| ErrorKind::Failed.cause("disconnected"))) {
-            let command = command.expect("unreachable");
-            self.handle_command(command);
-        }
-        while let Async::Ready(value) =
-            track_try!(self.message_rx.poll().map_err(|e| {
-                for (_, m) in self.transactions.drain() {
-                    m.exit(Err(e.clone()));
-                }
-                e
-            })) {
-            let (addr, message) = value.expect("unreachable");
-            self.handle_message(addr, message);
-        }
-        Ok(Async::NotReady)
+        panic!()
     }
 }
 
-#[derive(Debug)]
-pub struct BaseCall<M, A, F>(Option<Result<BaseCallInner<M, A, F>>>);
-impl<M, A, F> Future for BaseCall<M, A, F>
-    where M: Method,
-          A: Attribute,
-          F: Future<Item = (), Error = Error>
-{
+pub struct BaseCall<T: Transport, M, A>(T, M, A);
+impl<T: Transport, M: Method, A: Attribute> BaseCall<T, M, A> {
+    fn new(client: &mut BaseClient<T>, message: Request<M, A>) -> Self {
+        panic!()
+    }
+}
+impl<T: Transport, M, A> Future for BaseCall<T, M, A> {
     type Item = Response<M, A>;
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut f = self.0.take().expect("Cannot poll BaseCall twice")?;
-        let result = f.poll()?;
-        if let Async::NotReady = result {
-            self.0 = Some(Ok(f));
-        }
-        Ok(result)
+        panic!()
     }
 }
 
-#[derive(Debug)]
-struct BaseCallInner<M, A, F> {
-    id: TransactionId,
-    send_req: F,
-    recv_res: Monitor<RawMessage, Error>,
-    command_tx: Option<mpsc::Sender<Command>>,
-    link: RecvLoopLink,
-    _phantom: PhantomData<(M, A)>,
-}
-unsafe impl<M: Send, A: Send, F: Send> Send for BaseCallInner<M, A, F> {}
-impl<M, A, F> BaseCallInner<M, A, F> {
-    fn new(id: TransactionId,
-           future: F,
-           command_tx: mpsc::Sender<Command>,
-           link: RecvLoopLink)
-           -> Self {
-        let (monitored, monitor) = oneshot::monitor();
-        let _ = command_tx.send(Command::StartTransaction(id, monitored));
-        BaseCallInner {
-            id: id,
-            send_req: future,
-            recv_res: monitor,
-            command_tx: Some(command_tx),
-            link: link,
-            _phantom: PhantomData,
-        }
+pub struct BaseCast<T: Transport>(T);
+impl<T: Transport> BaseCast<T> {
+    fn new<M: Method, A: Attribute>(client: &mut BaseClient<T>, message: Indication<M, A>) -> Self {
+        panic!()
     }
 }
-impl<M, A, F> Drop for BaseCallInner<M, A, F> {
-    fn drop(&mut self) {
-        if let Some(tx) = self.command_tx.take() {
-            let _ = tx.send(Command::AbortTransaction(self.id));
-        }
-    }
-}
-impl<M, A, F> Future for BaseCallInner<M, A, F>
-    where M: Method,
-          A: Attribute,
-          F: Future<Item = (), Error = Error>
-{
-    type Item = Response<M, A>;
-    type Error = Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        if let Async::Ready(_) = track_try!(self.send_req.poll()) {
-            // TODO:
-            Err(ErrorKind::Timeout.into())
-        } else if let Async::Ready(raw) = track_try!(self.recv_res.poll()) {
-            let message = track_try!(Message::try_from_raw(raw));
-            let response = track_try!(message.try_into_response());
-            self.command_tx = None;
-            Ok(Async::Ready(response))
-        } else {
-            Ok(Async::NotReady)
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct BaseCast<F>(Option<Result<F>>);
-impl<F> Future for BaseCast<F>
-    where F: Future<Item = (), Error = Error>
-{
+impl<T: Transport> Future for BaseCast<T> {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut f = self.0.take().expect("Cannot poll BaseCast twice")?;
-        let result = f.poll()?;
-        if let Async::NotReady = result {
-            self.0 = Some(Ok(f));
-        }
-        Ok(result)
+        panic!()
     }
 }

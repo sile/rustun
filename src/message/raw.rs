@@ -39,6 +39,11 @@ impl RawMessage {
     pub fn attributes(&self) -> &[RawAttribute] {
         &self.attributes
     }
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        self.write_to(&mut buf).expect("must succeed");
+        buf
+    }
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         let mut temp_writer = io::Cursor::new(vec![0; 20]);
         let message_type = Type {
@@ -50,7 +55,7 @@ impl RawMessage {
         track_try!(temp_writer.write_u32be(MAGIC_COOKIE));
         track_try!(temp_writer.write_all(&self.transaction_id));
         for attr in self.attributes.iter() {
-            attr.write_to(&mut temp_writer)?;
+            track_try!(attr.write_to(&mut temp_writer));
         }
         let attrs_len = temp_writer.get_ref().len() - 20;
         track_assert!(attrs_len < 0x10000,

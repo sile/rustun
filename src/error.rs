@@ -1,3 +1,4 @@
+use std;
 use std::io;
 use std::sync::mpsc::RecvError;
 use trackable::error::{self, IntoTrackableError, TrackableError, ErrorKindExt};
@@ -12,6 +13,7 @@ pub enum ErrorKind {
     NotStunMessage,
     Unsupported,
     Failed,
+    Other,
 }
 impl error::ErrorKind for ErrorKind {}
 impl IntoTrackableError<MonitorError<Error>> for ErrorKind {
@@ -27,5 +29,10 @@ impl IntoTrackableError<io::Error> for ErrorKind {
 impl IntoTrackableError<RecvError> for ErrorKind {
     fn into_trackable_error(f: RecvError) -> Error {
         ErrorKind::Failed.cause(f)
+    }
+}
+impl IntoTrackableError<std::time::SystemTimeError> for ErrorKind {
+    fn into_trackable_error(f: std::time::SystemTimeError) -> Error {
+        ErrorKind::Other.cause(f)
     }
 }

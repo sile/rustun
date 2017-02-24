@@ -1,290 +1,228 @@
-use std::time::{SystemTime, Duration};
 use std::net::SocketAddr;
+use std::time::{Duration, SystemTime};
 use std::sync::mpsc as std_mpsc;
-use slog::Logger;
+use fibers::Spawn;
 use fibers::net::UdpSocket;
-use fibers::net::futures::{RecvFrom, SendTo};
-use fibers::time::timer::{self, Timeout};
-use futures::{self, Future, Poll, Async, Fuse};
+use fibers::net::futures::{UdpSocketBind, RecvFrom};
+use fibers::time::timer;
+use fibers::sync::oneshot::Monitor;
+use futures::{Future, Poll, Async, BoxFuture};
+use futures::future::Either;
 
 use {Error, ErrorKind};
-use message::RawMessage;
 use constants;
-use super::{RecvMessage, SendMessage};
+use transport::Transport;
+use message::RawMessage;
+use super::FifoRunner;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct UdpRetransmissionSpec {
-    pub rto: Duration,
-    pub rto_cache_duration: Duration,
-    pub rc: u32,
-    pub rm: u32,
+#[derive(Debug, Clone)]
+pub struct UdpTransportBuilder {
+    bind_addr: SocketAddr,
+    rto: Duration,
+    rto_cache_duration: Duration,
+    recv_buffer_size: usize,
 }
-impl Default for UdpRetransmissionSpec {
-    fn default() -> Self {
-        UdpRetransmissionSpec {
+impl UdpTransportBuilder {
+    pub fn new() -> Self {
+        UdpTransportBuilder {
+            bind_addr: "0.0.0.0:0".parse().unwrap(),
             rto: Duration::from_millis(constants::DEFAULT_RTO_MS),
             rto_cache_duration: Duration::from_millis(constants::DEFAULT_RTO_CACHE_DURATION_MS),
-            rc: constants::DEFAULT_RC,
-            rm: constants::DEFAULT_RM,
+            recv_buffer_size: constants::DEFAULT_MAX_MESSAGE_SIZE,
+        }
+    }
+    pub fn bind_addr(&mut self, addr: SocketAddr) -> &mut Self {
+        self.bind_addr = addr;
+        self
+    }
+    pub fn rto(&mut self, rto: Duration) -> &mut Self {
+        self.rto = rto;
+        self
+    }
+    pub fn rto_cache_duration(&mut self, duration: Duration) -> &mut Self {
+        self.rto_cache_duration = duration;
+        self
+    }
+    pub fn recv_buffer_size(&mut self, size: usize) -> &mut Self {
+        self.recv_buffer_size = size;
+        self
+    }
+    pub fn finish<S: Spawn>(&self, spawner: &S) -> UdpTransportBind {
+        UdpTransportBind {
+            future: UdpSocket::bind(self.bind_addr),
+            runner: FifoRunner::new(spawner),
+            params: self.clone(),
         }
     }
 }
 
-#[derive(Debug)]
+pub struct UdpTransportBind {
+    future: UdpSocketBind,
+    runner: FifoRunner<BoxFuture<UdpSocket, Error>>,
+    params: UdpTransportBuilder,
+}
+impl Future for UdpTransportBind {
+    type Item = UdpTransport;
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        Ok(track_try!(self.future.poll())
+            .map(|socket| UdpTransport::new(socket, self.runner.clone(), self.params.clone())))
+    }
+}
+
+#[derive(Debug, Clone)]
 struct RtoCache {
     rto: Duration,
     expiry_time: SystemTime,
 }
 
-#[derive(Debug)]
-pub struct UdpSender {
+pub struct UdpTransport {
     socket: UdpSocket,
-    peer: SocketAddr,
-    retransmission_spec: UdpRetransmissionSpec,
+    runner: FifoRunner<BoxFuture<UdpSocket, Error>>,
+    params: UdpTransportBuilder,
     rto_cache: Option<RtoCache>,
-    rto_rx: std_mpsc::Receiver<RtoCache>,
-    rto_tx: std_mpsc::Sender<RtoCache>,
+    rto_cache_tx: std_mpsc::Sender<Duration>,
+    rto_cache_rx: std_mpsc::Receiver<Duration>,
 }
-impl UdpSender {
-    pub fn new(socket: UdpSocket, peer: SocketAddr) -> Self {
-        let (rto_tx, rto_rx) = std_mpsc::channel();
-        UdpSender {
+impl UdpTransport {
+    fn new(socket: UdpSocket,
+           runner: FifoRunner<BoxFuture<UdpSocket, Error>>,
+           params: UdpTransportBuilder)
+           -> Self {
+        let (rto_cache_tx, rto_cache_rx) = std_mpsc::channel();
+        UdpTransport {
             socket: socket,
-            peer: peer,
-            retransmission_spec: UdpRetransmissionSpec::default(),
+            runner: runner,
+            params: params,
             rto_cache: None,
-            rto_rx: rto_rx,
-            rto_tx: rto_tx,
+            rto_cache_tx: rto_cache_tx,
+            rto_cache_rx: rto_cache_rx,
         }
     }
-    pub fn set_retransmission_spec(&mut self, spec: UdpRetransmissionSpec) -> &mut Self {
-        self.retransmission_spec = spec;
-        self.rto_cache = None;
-        self
-    }
-    pub fn retransmission_spec(&self) -> &UdpRetransmissionSpec {
-        &self.retransmission_spec
-    }
-    pub fn rto_cache(&self) -> Option<Duration> {
-        self.rto_cache.as_ref().map(|c| c.rto)
-    }
-    fn handle_rto_cache(&mut self) {
-        let is_expired =
-            self.rto_cache.as_ref().map_or(false, |c| c.expiry_time <= SystemTime::now());
-        if is_expired {
-            self.rto_cache = None;
-        }
-
-        while let Ok(cache) = self.rto_rx.try_recv() {
-            if self.rto_cache.as_ref().map_or(true, |c| c.rto < cache.rto) {
-                self.rto_cache = Some(cache);
-            }
-        }
-    }
-}
-impl SendMessage for UdpSender {
-    type Future = UdpSendMessage;
-    fn send_message(&mut self, message: RawMessage) -> Self::Future {
-        UdpSendMessage::new(self.socket.clone(), self.peer, message, &self.rto_tx, None)
-    }
-    fn send_request(&mut self, message: RawMessage) -> Self::Future {
-        self.handle_rto_cache();
-        let mut spec = self.retransmission_spec.clone();
-        if let Some(ref cache) = self.rto_cache {
-            spec.rto = cache.rto;
-        }
-        UdpSendMessage::new(self.socket.clone(),
-                            self.peer,
-                            message,
-                            &self.rto_tx,
-                            Some(spec))
-    }
-}
-
-enum SendInner {
-    Call(Call),
-    Cast(Cast),
-    Failed(futures::Failed<(), Error>),
-}
-impl Future for SendInner {
-    type Item = ();
-    type Error = Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match *self {
-            SendInner::Call(ref mut f) => f.poll(),
-            SendInner::Cast(ref mut f) => f.poll(),
-            SendInner::Failed(ref mut f) => f.poll(),
-        }
-    }
-}
-
-// #[derive(Debug)]
-struct Call {
-    socket: UdpSocket,
-    peer: SocketAddr,
-    message: Vec<u8>,
-    send_count: u32,
-    retransmission_spec: UdpRetransmissionSpec,
-    rto_tx: std_mpsc::Sender<RtoCache>,
-    timeout: Timeout,
-    future: Option<Fuse<SendTo<Vec<u8>>>>,
-}
-impl Drop for Call {
-    fn drop(&mut self) {
-        if self.send_count > 1 {
-            let rto = self.retransmission_spec.rto * self.send_count;
-            let expiry_time = SystemTime::now() + self.retransmission_spec.rto_cache_duration;
-            let cache = RtoCache {
+    fn update_rto_cache(&mut self) {
+        if let Ok(rto) = self.rto_cache_rx.try_recv() {
+            let expiry_time = SystemTime::now() + self.params.rto_cache_duration;
+            self.rto_cache = Some(RtoCache {
                 rto: rto,
                 expiry_time: expiry_time,
-            };
-            let _ = self.rto_tx.send(cache);
-        }
-    }
-}
-impl Future for Call {
-    type Item = ();
-    type Error = Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            if let Some(ref mut future) = self.future {
-                track_try!(future.poll().map_err(|(_, _, e)| e));
-            } else if self.send_count < self.retransmission_spec.rc {
-                let bytes = self.message.clone();
-                let future = self.socket.clone().send_to(bytes, self.peer);
-                self.send_count += 1;
-                let duration = if self.send_count == self.retransmission_spec.rc {
-                    self.retransmission_spec.rto * self.retransmission_spec.rm
-                } else {
-                    self.retransmission_spec.rto * self.send_count
-                };
-                self.timeout = timer::timeout(duration);
-                self.future = Some(future.fuse());
-                continue;
-            } else {
-                return Err(ErrorKind::Timeout.into());
-            }
-            if let Async::Ready(()) = track_try!(self.timeout.poll()) {
-                self.future = None;
-            } else {
-                return Ok(Async::NotReady)
+            });
+        } else if let Some(cache) = self.rto_cache.clone() {
+            if cache.expiry_time <= SystemTime::now() {
+                self.rto_cache = None;
             }
         }
     }
+    fn rto(&self) -> Duration {
+        self.rto_cache.as_ref().map_or(self.params.rto, |c| c.rto)
+    }
 }
-
-#[derive(Debug)]
-struct Cast(SendTo<Vec<u8>>);
-impl Future for Cast {
-    type Item = ();
-    type Error = Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        track_err!(self.0.poll().map(|r| r.map(|_| ())).map_err(|(_, _, e)| e))
+impl Transport for UdpTransport {
+    type SendMessage = UdpSendMessage;
+    type RecvMessage = UdpRecvMessage;
+    fn send_message(&mut self, peer: SocketAddr, message: RawMessage) -> Self::SendMessage {
+        self.update_rto_cache();
+        UdpSendMessage::new(self, peer, message)
+    }
+    fn recv_message(&mut self) -> Self::RecvMessage {
+        UdpRecvMessage::new(self)
     }
 }
 
-pub struct UdpSendMessage(SendInner);
+pub struct UdpSendMessage {
+    peer: SocketAddr,
+    runner: FifoRunner<BoxFuture<UdpSocket, Error>>,
+    start_rto: Duration,
+    current_rto: Duration,
+    rto_cache_tx: std_mpsc::Sender<Duration>,
+    message: RawMessage,
+    state: Either<Monitor<UdpSocket, Error>, BoxFuture<UdpSocket, Error>>,
+}
 impl UdpSendMessage {
-    fn new(socket: UdpSocket,
-           peer: SocketAddr,
-           message: RawMessage,
-           rto_tx: &std_mpsc::Sender<RtoCache>,
-           retransmission_spec: Option<UdpRetransmissionSpec>)
-           -> Self {
-        let mut buf = Vec::new();
-        let inner = match track_err!(message.write_to(&mut buf)) {
-            Err(e) => SendInner::Failed(futures::failed(e)),
-            Ok(_) => {
-                if let Some(retransmission_spec) = retransmission_spec {
-                    SendInner::Call(Call {
-                        socket: socket,
-                        peer: peer,
-                        message: buf,
-                        timeout: timer::timeout(Duration::from_millis(0)),
-                        send_count: 0,
-                        retransmission_spec: retransmission_spec,
-                        rto_tx: rto_tx.clone(),
-                        future: None,
-                    })
-                } else {
-                    SendInner::Cast(Cast(socket.send_to(buf, peer)))
-                }
-            }
-        };
-        UdpSendMessage(inner)
+    fn new(transport: &UdpTransport, peer: SocketAddr, message: RawMessage) -> Self {
+        let socket = transport.socket.clone();
+        let rto = transport.rto();
+        let future = transport.runner.register(Self::send_message(socket, &message, peer));
+        UdpSendMessage {
+            peer: peer,
+            runner: transport.runner.clone(),
+            start_rto: rto,
+            current_rto: rto,
+            rto_cache_tx: transport.rto_cache_tx.clone(),
+            message: message,
+            state: Either::A(future),
+        }
+    }
+    fn send_message(socket: UdpSocket,
+                    message: &RawMessage,
+                    peer: SocketAddr)
+                    -> BoxFuture<UdpSocket, Error> {
+        track_err!(socket.send_to(message.to_bytes(), peer).map_err(|(_, _, e)| e))
+            .and_then(|(socket, bytes, sent_size)| {
+                track_assert_eq!(sent_size, bytes.len(), ErrorKind::Other);
+                Ok(socket)
+            })
+            .boxed()
     }
 }
 impl Future for UdpSendMessage {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.0.poll()
-    }
-}
-
-#[derive(Debug)]
-pub struct UdpReceiver {
-    socket: UdpSocket,
-    buffer: Vec<u8>,
-    logger: Option<Logger>,
-}
-impl UdpReceiver {
-    pub fn new(socket: UdpSocket) -> Self {
-        Self::with_buffer(socket, vec![0; constants::DEFAULT_MAX_MESSAGE_SIZE])
-    }
-    pub fn with_buffer(socket: UdpSocket, buffer: Vec<u8>) -> Self {
-        UdpReceiver {
-            socket: socket,
-            buffer: buffer,
-            logger: None,
+        let next_state = match self.state {
+            Either::A(ref mut future) => {
+                if let Async::Ready(socket) = track_try!(future.poll()) {
+                    let rto = self.current_rto;
+                    let timeout = track_err!(timer::timeout(rto).map(move |()| socket));
+                    self.current_rto = rto * 2;
+                    Some(Either::B(timeout.boxed()))
+                } else {
+                    None
+                }
+            }
+            Either::B(ref mut timeout) => {
+                if let Async::Ready(socket) = track_try!(timeout.poll()) {
+                    let future = Self::send_message(socket, &self.message, self.peer);
+                    Some(Either::A(self.runner.register(future)))
+                } else {
+                    None
+                }
+            }
+        };
+        if let Some(state) = next_state {
+            self.state = state;
+            self.poll()
+        } else {
+            Ok(Async::NotReady)
         }
     }
-    pub fn set_logger(&mut self, logger: Logger) {
-        self.logger = Some(logger);
-    }
 }
-impl RecvMessage for UdpReceiver {
-    type Future = UdpRecvMessage;
-    fn recv_message(self) -> Self::Future {
-        let UdpReceiver { socket, buffer, logger } = self;
-        UdpRecvMessage {
-            logger: logger,
-            future: socket.recv_from(buffer),
+impl Drop for UdpSendMessage {
+    fn drop(&mut self) {
+        if self.start_rto != self.current_rto {
+            let _ = self.rto_cache_tx.send(self.current_rto);
         }
     }
 }
 
 #[derive(Debug)]
 pub struct UdpRecvMessage {
-    logger: Option<Logger>,
     future: RecvFrom<Vec<u8>>,
 }
+
+impl UdpRecvMessage {
+    fn new(transport: &UdpTransport) -> Self {
+        let buf = vec![0; transport.params.recv_buffer_size];
+        UdpRecvMessage { future: transport.socket.clone().recv_from(buf) }
+    }
+}
 impl Future for UdpRecvMessage {
-    type Item = (UdpReceiver, SocketAddr, RawMessage);
+    type Item = (SocketAddr, RawMessage);
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let result = track_try!(self.future.poll().map_err(|(_, _, e)| e));
-        if let Async::Ready((socket, buf, size, peer)) = result {
-            match RawMessage::read_from(&mut &buf[..size]) {
-                Err(e) => {
-                    if let Some(ref logger) = self.logger {
-                        info!(logger,
-                              "Cannot decode STUN message from {}: reason={}",
-                              peer,
-                              e);
-                    }
-                    self.future = socket.recv_from(buf);
-                    self.poll()
-                }
-                Ok(message) => {
-                    let receiver = UdpReceiver {
-                        logger: self.logger.take(),
-                        socket: socket,
-                        buffer: buf,
-                    };
-                    Ok(Async::Ready((receiver, peer, message)))
-                }
-            }
+        let polled = track_try!(self.future.poll().map_err(|(_, _, e)| e));
+        if let Async::Ready((_socket, buf, size, peer)) = polled {
+            let message = track_try!(RawMessage::read_from(&mut &buf[..size]));
+            Ok(Async::Ready((peer, message)))
         } else {
             Ok(Async::NotReady)
         }

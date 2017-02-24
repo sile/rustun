@@ -1,37 +1,23 @@
 use std::net::SocketAddr;
-use futures::Future;
+use fibers::sync::oneshot::Link;
+use futures::{Sink, Stream};
 
-pub use self::tcp::{TcpSender, TcpReceiver};
-pub use self::udp::{UdpSender, UdpReceiver, UdpRetransmissionSpec};
-
-use Error;
+use {Result, Error};
 use message::RawMessage;
 
+pub use self::udp2::{UdpTransportBuilder, UdpTransport};
+
 pub mod futures {
-    pub use super::tcp::{TcpRecvMessage, TcpSendMessage};
-    pub use super::udp::{UdpRecvMessage, UdpSendMessage};
+    pub use super::udp2::UdpTransportBind;
 }
 
-pub mod streams {
-    pub use super::common::MessageStream;
+// mod udp;
+mod udp2;
+
+pub type MessageSinkItem = (SocketAddr, RawMessage, Link<(), (), (), Error>);
+
+pub trait MessageSink: Sink<SinkItem = MessageSinkItem, SinkError = Error> {}
+pub trait MessageStream
+    : Stream<Item = (SocketAddr, Result<RawMessage>), Error = Error> {
 }
-
-mod tcp;
-mod udp;
-mod common;
-
-pub trait SendMessage {
-    type Future: Future<Item = (), Error = Error>;
-    fn send_message(&mut self, message: RawMessage) -> Self::Future;
-
-    // TODO: split to SendRequest trait
-    fn send_request(&mut self, message: RawMessage) -> Self::Future;
-}
-
-pub trait RecvMessage: Sized {
-    type Future: Future<Item = (Self, SocketAddr, RawMessage), Error = Error>;
-    fn recv_message(self) -> Self::Future;
-    fn into_stream(self) -> streams::MessageStream<Self> {
-        common::message_stream(self)
-    }
-}
+pub trait Transport: MessageSink + MessageStream {}
