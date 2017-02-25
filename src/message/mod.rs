@@ -66,11 +66,11 @@ impl<M, A> Indication<M, A>
     where M: Method,
           A: Attribute
 {
-    pub fn new<T>(method: T) -> Self
-        where T: Indicatable + Into<M>
+    pub fn new(method: M) -> Self
+        where M: Indicatable
     {
         Indication {
-            method: method.into(),
+            method: method,
             transaction_id: rand::random(),
             attributes: Vec::new(),
         }

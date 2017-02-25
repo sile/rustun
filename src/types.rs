@@ -42,6 +42,7 @@ impl U12 {
 /// > ([RFC 5389 -- 3. Overview of Operation](https://tools.ietf.org/html/rfc5389#section-3))
 pub type TransactionId = [u8; 12];
 
+/// TODO: move to rfc5389
 #[derive(Debug, Clone)]
 pub struct ErrorCode {
     code: u16,

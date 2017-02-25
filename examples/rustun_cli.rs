@@ -8,9 +8,8 @@ extern crate trackable;
 use clap::{App, Arg};
 use fibers::{Executor, InPlaceExecutor, Spawn};
 use futures::Future;
-use rustun::Client;
+use rustun::{Method, Client};
 use rustun::rfc5389::{self, UdpClient};
-use rustun::method::Requestable;
 
 fn main() {
     let matches = App::new("rustun_cli")
