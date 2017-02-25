@@ -103,19 +103,63 @@ impl RawMessage {
         where M: Method,
               A: Attribute
     {
-        panic!()
+        track_assert_eq!(self.class, Class::Request, ErrorKind::Other);
+        let method = track_try!(M::from_u12(self.method).ok_or(ErrorKind::Other));
+        let mut attrs = Vec::new();
+        for a in self.attributes.iter() {
+            let a = track_try!(A::decode(&a, &self));
+            attrs.push(a);
+        }
+        Ok(Request {
+            method: method,
+            transaction_id: self.transaction_id,
+            attributes: attrs,
+        })
     }
     pub fn try_into_indication<M, A>(self) -> Result<Indication<M, A>>
         where M: Method,
               A: Attribute
     {
-        panic!()
+        track_assert_eq!(self.class, Class::Indication, ErrorKind::Other);
+        let method = track_try!(M::from_u12(self.method).ok_or(ErrorKind::Other));
+        let mut attrs = Vec::new();
+        for a in self.attributes.iter() {
+            let a = track_try!(A::decode(&a, &self));
+            attrs.push(a);
+        }
+        Ok(Indication {
+            method: method,
+            transaction_id: self.transaction_id,
+            attributes: attrs,
+        })
     }
     pub fn try_into_response<M, A>(self) -> Result<Response<M, A>>
         where M: Method,
               A: Attribute
     {
-        panic!()
+        track_assert!(self.class == Class::SuccessResponse || self.class == Class::ErrorResponse,
+                      ErrorKind::Other);
+        let method = track_try!(M::from_u12(self.method).ok_or(ErrorKind::Other));
+        let mut attrs = Vec::new();
+        for a in self.attributes.iter() {
+            let a = track_try!(A::decode(&a, &self));
+            attrs.push(a);
+        }
+        if self.class == Class::SuccessResponse {
+            Ok(Ok(SuccessResponse {
+                method: method,
+                transaction_id: self.transaction_id,
+                attributes: attrs,
+            }))
+        } else {
+            panic!()
+            // TODO: handle error code attribute
+            // Ok(Err(ErrorResponse {
+            //     method: method,
+            //     transaction_id: self.transaction_id,
+            //     attributes: Vec::new(),
+            // }))
+        }
     }
     pub fn try_from_request<M, A>(from: Request<M, A>) -> Result<Self>
         where M: Method,
