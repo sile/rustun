@@ -1,10 +1,7 @@
-use std::net::SocketAddr;
-use fibers::Spawn;
-use fibers::net::UdpSocket;
 use trackable::error::ErrorKindExt;
 
-use {Result, Client, ErrorKind};
-use message::{self, Class, RawMessage};
+use {Result, ErrorKind};
+use message::{self, RawMessage};
 use attribute::{self, RawAttribute};
 use types::U12;
 use clients;
@@ -13,36 +10,9 @@ pub mod methods;
 pub mod attributes;
 pub mod handlers;
 
-type UdpClientInner = clients::RateLimitedClient<clients::UdpClient, Method, Attribute>;
+pub type UdpClient = clients::UdpClient;
+// pub type TcpClient = clients::TcpClient;
 
-#[derive(Debug)]
-pub struct UdpClient(UdpClientInner);
-impl UdpClient {
-    pub fn new<T: Spawn>(spawner: T, socket: UdpSocket, server: SocketAddr) -> Self {
-        let inner = clients::UdpClient::new(spawner, socket, server);
-        UdpClient(clients::RateLimitedClient::new(inner))
-    }
-    pub fn inner(&self) -> &UdpClientInner {
-        &self.0
-    }
-    pub fn inner_mut(&mut self) -> &mut UdpClientInner {
-        &mut self.0
-    }
-}
-impl Client<Method, Attribute> for UdpClient {
-    type Call = <UdpClientInner as Client<Method, Attribute>>::Call;
-    type Cast = <UdpClientInner as Client<Method, Attribute>>::Cast;
-    fn call(&mut self, message: Request) -> Self::Call {
-        self.0.call(message)
-    }
-    fn cast(&mut self, message: Indication) -> Self::Cast {
-        self.0.cast(message)
-    }
-}
-
-pub type TcpClient = clients::TcpClient;
-
-pub type Message = ::Message<Method, Attribute>;
 pub type Request = message::Request<Method, Attribute>;
 pub type Response = message::Response<Method, Attribute>;
 pub type Indication = message::Indication<Method, Attribute>;
@@ -68,10 +38,10 @@ impl ::Method for Method {
             Method::Binding(ref m) => m.as_u12(),
         }
     }
-    fn permits_class(&self, class: Class) -> bool {
-        match *self {
-            Method::Binding(ref m) => m.permits_class(class),
-        }
+}
+impl From<methods::Binding> for Method {
+    fn from(f: methods::Binding) -> Self {
+        Method::Binding(f)
     }
 }
 

@@ -7,10 +7,10 @@ extern crate trackable;
 
 use clap::{App, Arg};
 use fibers::{Executor, InPlaceExecutor, Spawn};
-use fibers::net::UdpSocket;
 use futures::Future;
-use rustun::{Method, Client, Error};
+use rustun::Client;
 use rustun::rfc5389::{self, UdpClient};
+use rustun::method::Requestable;
 
 fn main() {
     let matches = App::new("rustun_cli")
@@ -31,13 +31,10 @@ fn main() {
 
     let mut executor = InPlaceExecutor::new().unwrap();
     let handle = executor.handle();
-    let future = track_err!(UdpSocket::bind("0.0.0.0:0".parse().unwrap()))
-        .map_err(|e: Error| e)
-        .and_then(move |socket| {
-            let mut client = UdpClient::new(handle, socket, addr);
-            let request = rfc5389::Method::binding().request();
-            track_err!(client.call(request))
-        });
+    let future = UdpClient::new(handle, addr).and_then(|mut client| {
+        let request = rfc5389::methods::Binding.request::<rfc5389::Method, rfc5389::Attribute>();
+        track_err!(client.call(request))
+    });
     let monitor = executor.spawn_monitor(future);
     match executor.run_fiber(monitor).unwrap() {
         Ok(v) => println!("SUCCEEDE: {:?}", v),

@@ -22,7 +22,7 @@ pub mod transport;
 pub mod attribute;
 pub mod constants;
 pub mod method;
-//pub mod rfc5389;
+pub mod rfc5389;
 
 mod error;
 mod client;

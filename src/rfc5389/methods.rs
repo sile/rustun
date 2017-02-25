@@ -1,5 +1,5 @@
 use Method;
-use message::Class;
+use method;
 use types::U12;
 
 pub const METHOD_BINDING: u16 = 0x0001;
@@ -17,7 +17,6 @@ impl Method for Binding {
     fn as_u12(&self) -> U12 {
         U12::from_u16(METHOD_BINDING).unwrap()
     }
-    fn permits_class(&self, _class: Class) -> bool {
-        true
-    }
 }
+impl method::Requestable for Binding {}
+impl method::Indicatable for Binding {}
