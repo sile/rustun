@@ -38,7 +38,7 @@ impl<T> BaseClient<T>
         BaseClient {
             server: server,
             command_tx: command_tx,
-            request_timeout: Duration::from_millis(constants::DEFAULT_TI_MS),
+            request_timeout: Duration::from_millis(constants::DEFAULT_TIMEOUT_MS),
             _phantom: PhantomData,
         }
     }

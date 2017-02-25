@@ -60,30 +60,6 @@ pub const DEFAULT_RTO_MS: u64 = 500;
 /// > (https://tools.ietf.org/html/rfc5389#section-7.2.1))
 pub const DEFAULT_RTO_CACHE_DURATION_MS: u64 = 10 * 60 * 1000;
 
-/// The default value of Rc.
-///
-/// > Retransmissions continue until a response is received, or until a
-/// > total of **Rc** requests have been sent.  Rc SHOULD be configurable and
-/// > SHOULD have a default of **7**.
-/// >
-/// > ([RFC 5389 -- 7.2.1. Sending over UDP]
-/// > (https://tools.ietf.org/html/rfc5389#section-7.2.1))
-pub const DEFAULT_RC: u32 = 7;
-
-/// The default value of Rm.
-///
-/// > Retransmissions continue until a response is received, or until a
-/// > total of Rc requests have been sent.  Rc SHOULD be configurable and
-/// > SHOULD have a default of 7. If, after the last request, a duration
-/// > equal to **Rm** times the RTO has passed without a response (providing
-/// > ample time to get a response if only this final request actually
-/// > succeeds), the client SHOULD consider the transaction to have failed.
-/// > **Rm** SHOULD be configurable and SHOULD have a default of **16**.
-/// >
-/// > ([RFC 5389 -- 7.2.1. Sending over UDP]
-/// > (https://tools.ietf.org/html/rfc5389#section-7.2.1))
-pub const DEFAULT_RM: u32 = 16;
-
 /// The default value of Ti (Timeout duration for a request over TCP).
 ///
 /// > Reliability of STUN over TCP and TLS-over-TCP is handled by TCP
@@ -95,7 +71,7 @@ pub const DEFAULT_RM: u32 = 16;
 /// >
 /// > ([RFC 5389 -- 7.2.2. Sending over TCP or TLS-over-TCP]
 /// > (https://tools.ietf.org/html/rfc5389#section-7.2.2))
-pub const DEFAULT_TI_MS: u64 = 39_500;
+pub const DEFAULT_TIMEOUT_MS: u64 = 39_500;
 
 /// The default max concurrent transactions by a client to a server.
 ///
