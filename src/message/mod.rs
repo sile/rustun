@@ -20,11 +20,11 @@ impl<M, A> Request<M, A>
     where M: Method,
           A: Attribute
 {
-    pub fn new<T>(method: T) -> Self
-        where T: Requestable + Into<M>
+    pub fn new(method: M) -> Self
+        where M: Requestable
     {
         Request {
-            method: method.into(),
+            method: method,
             transaction_id: rand::random(),
             attributes: Vec::new(),
         }

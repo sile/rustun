@@ -32,7 +32,7 @@ fn main() {
     let mut executor = InPlaceExecutor::new().unwrap();
     let handle = executor.handle();
     let future = UdpClient::new(handle, addr).and_then(|mut client| {
-        let request = rfc5389::methods::Binding.request::<rfc5389::Method, rfc5389::Attribute>();
+        let request = rfc5389::methods::Binding.request::<rfc5389::Attribute>();
         track_err!(client.call(request))
     });
     let monitor = executor.spawn_monitor(future);

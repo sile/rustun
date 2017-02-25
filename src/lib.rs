@@ -25,7 +25,7 @@ pub mod method;
 pub mod rfc5389;
 
 mod error;
-mod client;
+pub mod client;
 //mod server;
 
 pub type Result<T> = ::std::result::Result<T, Error>;

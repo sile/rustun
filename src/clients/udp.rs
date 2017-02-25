@@ -2,16 +2,16 @@ use std::net::SocketAddr;
 use fibers::Spawn;
 use futures::{Future, Poll};
 
-use {Method, Attribute, Client, Error};
+use {Client, Error};
 use transport::{UdpTransport, UdpTransportBuilder};
 use transport::futures::UdpTransportBind;
-use message::{Indication, Request};
+use message::RawMessage;
 use super::BaseClient;
 
-pub type UdpCall<M, A> =
-    <BaseClient<UdpTransport> as Client<M, A>>::Call;
-pub type UdpCast<M, A> =
-    <BaseClient<UdpTransport> as Client<M, A>>::Cast;
+pub type UdpCall =
+    <BaseClient<UdpTransport> as Client>::CallRaw;
+pub type UdpCast =
+    <BaseClient<UdpTransport> as Client>::CastRaw;
 
 // TODO: UdpClientBuilder
 pub struct UdpClient(BaseClient<UdpTransport>);
@@ -24,17 +24,14 @@ impl UdpClient {
         }
     }
 }
-impl<M, A> Client<M, A> for UdpClient
-    where M: Method,
-          A: Attribute
-{
-    type Call = UdpCall<M, A>;
-    type Cast = UdpCast<M, A>;
-    fn call(&mut self, message: Request<M, A>) -> Self::Call {
-        self.0.call(message)
+impl Client for UdpClient {
+    type CallRaw = UdpCall;
+    type CastRaw = UdpCast;
+    fn call_raw(&mut self, message: RawMessage) -> Self::CallRaw {
+        self.0.call_raw(message)
     }
-    fn cast(&mut self, message: Indication<M, A>) -> Self::Cast {
-        self.0.cast(message)
+    fn cast_raw(&mut self, message: RawMessage) -> Self::CastRaw {
+        self.0.cast_raw(message)
     }
 }
 

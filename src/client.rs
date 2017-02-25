@@ -1,51 +1,60 @@
-use futures::{Future, BoxFuture};
+use std::marker::PhantomData;
+use futures::{self, Future, Poll, Async};
+use futures::future::{Either, Failed};
 
 use {Method, Attribute, Error};
-use message::{Indication, Request, Response};
+use message::{Indication, Request, Response, RawMessage};
 
-pub trait Client<M, A>
-    where M: Method,
-          A: Attribute
-{
-    type Call: Future<Item = Response<M, A>, Error = Error>;
-    type Cast: Future<Item = (), Error = Error>;
-    fn call(&mut self, message: Request<M, A>) -> Self::Call;
-    fn cast(&mut self, message: Indication<M, A>) -> Self::Cast;
-    fn boxed(mut self) -> BoxClient<M, A>
-        where Self: Sized + Send + 'static,
-              Self::Call: Send + 'static,
-              Self::Cast: Send + 'static
+pub trait Client {
+    type CallRaw: Future<Item = RawMessage, Error = Error>;
+    type CastRaw: Future<Item = (), Error = Error>;
+    fn call<M, A>(&mut self, message: Request<M, A>) -> Call<M, A, Self::CallRaw>
+        where M: Method,
+              A: Attribute
     {
-        let f = move |message| match message {
-            Ok(request) => Ok(self.call(request).boxed()),
-            Err(indication) => Err(self.cast(indication).boxed()),
-        };
-        BoxClient(Box::new(f))
+        match track_err!(RawMessage::try_from_request(message)) {
+            Err(e) => Call(Either::A(futures::failed(e)), PhantomData),
+            Ok(m) => Call(Either::B(self.call_raw(m)), PhantomData),
+        }
+    }
+    fn cast<M, A>(&mut self, message: Indication<M, A>) -> Cast<Self::CastRaw>
+        where M: Method,
+              A: Attribute
+    {
+        match track_err!(RawMessage::try_from_indication(message)) {
+            Err(e) => Cast(Either::A(futures::failed(e))),
+            Ok(m) => Cast(Either::B(self.cast_raw(m))),
+        }
+    }
+
+    fn call_raw(&mut self, message: RawMessage) -> Self::CallRaw;
+    fn cast_raw(&mut self, message: RawMessage) -> Self::CastRaw;
+}
+
+pub struct Cast<F>(Either<Failed<(), Error>, F>);
+impl<F> Future for Cast<F>
+    where F: Future<Item = (), Error = Error>
+{
+    type Item = ();
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        track_err!(self.0.poll())
     }
 }
 
-type BoxClientFn<M, A> = Box<FnMut(Result<Request<M, A>, Indication<M, A>>)
-                                   -> Result<BoxFuture<Response<M, A>, Error>,
-                                              BoxFuture<(), Error>> + Send + 'static>;
-
-pub struct BoxClient<M, A>(BoxClientFn<M, A>);
-impl<M, A> Client<M, A> for BoxClient<M, A>
+pub struct Call<M, A, F>(Either<Failed<RawMessage, Error>, F>, PhantomData<(M, A)>);
+impl<M, A, F> Future for Call<M, A, F>
     where M: Method,
-          A: Attribute
+          A: Attribute,
+          F: Future<Item = RawMessage, Error = Error>
 {
-    type Call = BoxFuture<Response<M, A>, Error>;
-    type Cast = BoxFuture<(), Error>;
-    fn call(&mut self, message: Request<M, A>) -> Self::Call {
-        (self.0)(Ok(message)).ok().unwrap()
-    }
-    fn cast(&mut self, message: Indication<M, A>) -> Self::Cast {
-        (self.0)(Err(message)).err().unwrap()
-    }
-    fn boxed(self) -> BoxClient<M, A>
-        where Self: Sized + Send + 'static,
-              Self::Call: Send + 'static,
-              Self::Cast: Send + 'static
-    {
-        self
+    type Item = Response<M, A>;
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        if let Async::Ready(message) = track_try!(self.0.poll()) {
+            track_err!(message.try_into_response()).map(Async::Ready)
+        } else {
+            Ok(Async::NotReady)
+        }
     }
 }

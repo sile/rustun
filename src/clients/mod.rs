@@ -1,4 +1,3 @@
-pub use client::BoxClient;
 pub use self::base::BaseClient;
 // pub use self::tcp::TcpClient;
 pub use self::udp::UdpClient;

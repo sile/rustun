@@ -10,8 +10,8 @@ use fibers::time::timer::{self, Timeout};
 use futures::{Future, Stream, Poll, Async, AsyncSink};
 use trackable::error::ErrorKindExt;
 
-use {Client, Transport, Method, Attribute, Error, ErrorKind, Result};
-use message::{Request, Indication, Response, RawMessage};
+use {Client, Transport, Error, ErrorKind, Result};
+use message::RawMessage;
 use types::TransactionId;
 use constants;
 
@@ -46,13 +46,13 @@ impl<T> BaseClient<T>
         self.request_timeout = timeout;
     }
 }
-impl<T: Transport, M: Method, A: Attribute> Client<M, A> for BaseClient<T> {
-    type Call = BaseCall<M, A>;
-    type Cast = BaseCast;
-    fn call(&mut self, message: Request<M, A>) -> Self::Call {
+impl<T: Transport> Client for BaseClient<T> {
+    type CallRaw = BaseCall;
+    type CastRaw = BaseCast;
+    fn call_raw(&mut self, message: RawMessage) -> Self::CallRaw {
         BaseCall::new(self, message)
     }
-    fn cast(&mut self, message: Indication<M, A>) -> Self::Cast {
+    fn cast_raw(&mut self, message: RawMessage) -> Self::CastRaw {
         BaseCast::new(self, message)
     }
 }
@@ -139,46 +139,35 @@ impl<T: Transport> Future for BaseClientLoop<T> {
     }
 }
 
-pub struct BaseCall<M, A> {
+pub struct BaseCall {
     transaction_id: TransactionId,
     link: Link<(), (), (), Error>,
     monitor: Monitor<RawMessage, Error>,
     timeout: Timeout,
     command_tx: Option<mpsc::Sender<Command>>,
-    _phantom: PhantomData<(M, A)>,
 }
-impl<M: Method, A: Attribute> BaseCall<M, A> {
-    fn new<T>(client: &mut BaseClient<T>, message: Request<M, A>) -> Self {
+impl BaseCall {
+    fn new<T>(client: &mut BaseClient<T>, message: RawMessage) -> Self {
         let transaction_id = message.transaction_id().clone();
         let (link0, link1) = oneshot::link();
         let (monitored, monitor) = oneshot::monitor();
-        match track_err!(RawMessage::try_from_request(message)) {
-            Err(e) => link1.exit(Err(e)),
-            Ok(message) => {
-                let _ = client.command_tx.send(Command::Call(message, link1, monitored));
-            }
-        }
+        let _ = client.command_tx.send(Command::Call(message, link1, monitored));
         BaseCall {
             transaction_id: transaction_id,
             link: link0,
             monitor: monitor,
             timeout: timer::timeout(client.request_timeout),
             command_tx: Some(client.command_tx.clone()),
-            _phantom: PhantomData,
         }
     }
 }
-impl<M, A> Future for BaseCall<M, A>
-    where M: Method,
-          A: Attribute
-{
-    type Item = Response<M, A>;
+impl Future for BaseCall {
+    type Item = RawMessage;
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         if let Async::Ready(message) = track_try!(self.monitor.poll()) {
-            let response = track_try!(message.try_into_response());
             self.command_tx = None;
-            return Ok(Async::Ready(response));
+            return Ok(Async::Ready(message));
         }
         if let Async::Ready(()) = track_try!(self.link.poll()) {
             return Err(track!(ErrorKind::Other.cause("unreachable")));
@@ -189,7 +178,7 @@ impl<M, A> Future for BaseCall<M, A>
         Ok(Async::NotReady)
     }
 }
-impl<M, A> Drop for BaseCall<M, A> {
+impl Drop for BaseCall {
     fn drop(&mut self) {
         if let Some(command_tx) = self.command_tx.take() {
             let _ = command_tx.send(Command::Abort(self.transaction_id));
@@ -202,16 +191,9 @@ pub struct BaseCast {
     link: Link<(), (), (), Error>,
 }
 impl BaseCast {
-    fn new<T, M: Method, A: Attribute>(client: &mut BaseClient<T>,
-                                       message: Indication<M, A>)
-                                       -> Self {
+    fn new<T>(client: &mut BaseClient<T>, message: RawMessage) -> Self {
         let (link0, link1) = oneshot::link();
-        match track_err!(RawMessage::try_from_indication(message)) {
-            Err(e) => link1.exit(Err(e)),
-            Ok(message) => {
-                let _ = client.command_tx.send(Command::Cast(message, link1));
-            }
-        }
+        let _ = client.command_tx.send(Command::Cast(message, link1));
         BaseCast {
             link: link0,
             _command_tx: client.command_tx.clone(),

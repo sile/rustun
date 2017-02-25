@@ -16,9 +16,8 @@ impl Method for U12 {
 }
 
 pub trait Requestable: Method + Sized {
-    fn request<M, A>(self) -> Request<M, A>
-        where M: From<Self> + Method,
-              A: Attribute
+    fn request<A>(self) -> Request<Self, A>
+        where A: Attribute
     {
         Request::new(self)
     }
