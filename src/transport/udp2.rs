@@ -306,7 +306,7 @@ struct SendItem {
     peer: SocketAddr,
     message: RawMessage,
     rto: Option<Duration>,
-    link: Link<(), Error, (), ()>,
+    link: Option<Link<(), Error, (), ()>>,
 }
 impl PartialOrd for SendItem {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {

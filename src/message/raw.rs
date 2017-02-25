@@ -179,6 +179,15 @@ impl RawMessage {
                                   *from.transaction_id(),
                                   from.attributes()))
     }
+    pub fn try_from_response<M, A>(from: Response<M, A>) -> Result<Self>
+        where M: Method,
+              A: Attribute
+    {
+        match from {
+            Err(f) => Self::try_from_error_response(f),
+            Ok(f) => Self::try_from_success_response(f),
+        }
+    }
     pub fn try_from_success_response<M, A>(from: SuccessResponse<M, A>) -> Result<Self>
         where M: Method,
               A: Attribute

@@ -80,15 +80,17 @@ impl<T: Transport> BaseClientLoop<T> {
     fn handle_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::Cast(message, link) => {
-                let result = track_try!(self.transport.start_send((self.server, message, link)));
-                if let AsyncSink::NotReady((_, _, link)) = result {
+                let result = track_try!(self.transport
+                    .start_send((self.server, message, Some(link))));
+                if let AsyncSink::NotReady((_, _, Some(link))) = result {
                     link.exit(track_err!(Err(ErrorKind::Full)));
                 }
             }
             Command::Call(message, link, monitored) => {
                 let transaction_id = message.transaction_id().clone();
-                let result = track_try!(self.transport.start_send((self.server, message, link)));
-                if let AsyncSink::NotReady((_, _, link)) = result {
+                let result = track_try!(self.transport
+                    .start_send((self.server, message, Some(link))));
+                if let AsyncSink::NotReady((_, _, Some(link))) = result {
                     link.exit(track_err!(Err(ErrorKind::Full)));
                 } else {
                     self.transactions.insert(transaction_id, monitored);

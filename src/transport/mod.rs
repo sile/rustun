@@ -14,7 +14,7 @@ pub mod futures {
 // mod udp;
 mod udp2;
 
-pub type MessageSinkItem = (SocketAddr, RawMessage, Link<(), Error, (), ()>);
+pub type MessageSinkItem = (SocketAddr, RawMessage, Option<Link<(), Error, (), ()>>);
 
 pub trait MessageSink: Sink<SinkItem = MessageSinkItem, SinkError = Error> {}
 pub trait MessageStream

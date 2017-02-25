@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use futures::Future;
 
-use {Method, Attribute};
+use {Method, Attribute, Error};
 use message::{Indication, Request, Response};
 
 pub trait HandleMessage {
@@ -17,4 +17,5 @@ pub trait HandleMessage {
                    client: SocketAddr,
                    message: Indication<Self::Method, Self::Attribute>)
                    -> Self::HandleCast;
+    fn handle_error(&mut self, client: SocketAddr, error: Error);
 }

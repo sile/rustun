@@ -1,160 +1,125 @@
-use std::mem;
 use std::net::SocketAddr;
-use slog::{self, Logger};
 use fibers::{Spawn, BoxSpawn};
-use fibers::net::UdpSocket;
-use fibers::net::futures::UdpSocketBind;
-use futures::{Future, Poll, Async, Stream};
+use fibers::sync::mpsc;
+use futures::{Future, Poll, Async, Stream, Sink, AsyncSink};
+use futures::future::Either;
+use trackable::error::ErrorKindExt;
 
-use {Result, Error, HandleMessage, Message, ErrorKind, Method};
-use message::RawMessage;
-use transport::{RecvMessage, UdpReceiver, SendMessage};
-use transport::streams::MessageStream;
+use {Result, Error, HandleMessage, ErrorKind};
+use message::{Class, RawMessage};
+use transport::{UdpTransport, UdpTransportBuilder};
+use transport::futures::UdpTransportBind;
 
 #[derive(Debug)]
 pub struct UdpServerBuilder {
     bind_addr: SocketAddr,
-    logger: Logger,
 }
 impl UdpServerBuilder {
     pub fn new(bind_addr: SocketAddr) -> Self {
-        UdpServerBuilder {
-            bind_addr: bind_addr,
-            logger: Logger::root(slog::Discard, o!()),
-        }
+        UdpServerBuilder { bind_addr: bind_addr }
     }
-    pub fn logger(&mut self, logger: Logger) -> &mut Self {
-        self.logger = logger;
-        self
-    }
-    pub fn start<H: HandleMessage>(&mut self, spawner: BoxSpawn, handler: H) -> UdpServer<H> {
-        let state = UdpServerState {
-            logger: self.logger.clone(),
-            spawner: spawner,
+    pub fn start<S, H>(&mut self, spawner: S, handler: H) -> UdpServer<H>
+        where S: Spawn + Send + 'static,
+              H: HandleMessage
+    {
+        let future = UdpTransportBuilder::new().bind_addr(self.bind_addr).finish();
+        let (response_tx, response_rx) = mpsc::channel();
+        UdpServer {
+            spawner: spawner.boxed(),
+            transport: Either::A(future),
             handler: handler,
-        };
-        let future = UdpSocket::bind(self.bind_addr);
-        UdpServer(UdpServerInner::Bind(future, state))
+            response_tx: response_tx,
+            response_rx: response_rx,
+        }
     }
 }
 
-//#[derive(Debug)]
-pub struct UdpServer<H>(UdpServerInner<H>);
+pub struct UdpServer<H> {
+    spawner: BoxSpawn,
+    transport: Either<UdpTransportBind, UdpTransport>,
+    handler: H,
+    response_tx: mpsc::Sender<(SocketAddr, Result<RawMessage>)>,
+    response_rx: mpsc::Receiver<(SocketAddr, Result<RawMessage>)>,
+}
+impl<H: HandleMessage> UdpServer<H> {
+    fn poll_bind_if_needed(&mut self) -> Poll<(), Error> {
+        let transport = match self.transport {
+            Either::A(ref mut future) => {
+                if let Async::Ready(transport) = track_try!(future.poll()) {
+                    transport
+                } else {
+                    return Ok(Async::NotReady);
+                }
+            }
+            Either::B(_) => return Ok(Async::Ready(())),
+        };
+        self.transport = Either::B(transport);
+        Ok(Async::Ready(()))
+    }
+    fn handle_message(&mut self, client: SocketAddr, message: RawMessage) -> Result<()> {
+        match message.class() {
+            Class::Request => {
+                let request = track_try!(message.try_into_request());
+                let future = self.handler.handle_call(client, request);
+                let response_tx = self.response_tx.clone();
+                let future = future.and_then(move |response| {
+                    let message = RawMessage::try_from_response(response);
+                    let _ = response_tx.send((client, message));
+                    Ok(())
+                });
+                self.spawner.spawn(future);
+                Ok(())
+            }
+            Class::Indication => {
+                let indication = track_try!(message.try_into_indication());
+                let future = self.handler.handle_cast(client, indication);
+                self.spawner.spawn(future);
+                Ok(())
+            }
+            other => {
+                let e = ErrorKind::Other.cause(format!("Unexpected class: {:?}", other));
+                Err(track!(e))
+            }
+        }
+    }
+}
 impl<H: HandleMessage> Future for UdpServer<H> {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.0.poll()
-    }
-}
-
-#[derive(Debug)]
-struct UdpServerState<H> {
-    logger: Logger,
-    spawner: BoxSpawn,
-    handler: H,
-}
-
-//#[derive(Debug)]
-enum UdpServerInner<H> {
-    Bind(UdpSocketBind, UdpServerState<H>),
-    Loop(UdpServerLoop<H>),
-    Done,
-}
-impl<H: HandleMessage> Future for UdpServerInner<H> {
-    type Item = ();
-    type Error = Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match mem::replace(self, UdpServerInner::Done) {
-            UdpServerInner::Bind(mut future, state) => {
-                if let Async::Ready(socket) = track_try!(future.poll()) {
-                    let future = UdpServerLoop::new(socket, state);
-                    *self = UdpServerInner::Loop(future);
-                    self.poll()
-                } else {
-                    *self = UdpServerInner::Bind(future, state);
-                    Ok(Async::NotReady)
-                }
-            }
-            UdpServerInner::Loop(mut future) =>{
-                if let Async::Ready(()) = track_try!(future.poll()) {
-                    Ok(Async::Ready(()))
-                } else {
-                    *self = UdpServerInner::Loop(future);
-                    Ok(Async::NotReady)
-                }
-            }
-            UdpServerInner::Done => panic!("Cannot poll UdpServerInner twice"),
+        if let Async::NotReady = track_try!(self.poll_bind_if_needed()) {
+            return Ok(Async::NotReady);
         }
-    }
-}
-
-// #[derive(Debug)]
-struct UdpServerLoop<H> {
-    socket: UdpSocket,
-    stream: MessageStream<UdpReceiver>,
-    state: UdpServerState<H>,
-}
-impl<H: HandleMessage> UdpServerLoop<H> {
-    pub fn new(socket: UdpSocket, state: UdpServerState<H>) -> Self {
-        UdpServerLoop {
-            socket: socket.clone(),
-            stream: UdpReceiver::new(socket).into_stream(),
-            state: state,
-        }
-    }
-    fn handle_message(&mut self, client: SocketAddr, message: RawMessage) -> Result<()> {
-        let message: Message<H::Method, H::Attribute> = track_try!(Message::try_from_raw(message));
-        track_assert!(message.is_permitted(),
-                      ErrorKind::Failed,
-                      "The class {:?} is not permitted by the method {:?}",
-                      message.class(),
-                      message.method().as_u12());
-        if message.class().is_request() {
-            // XXX: over spec
-            let mut sender = ::transport::UdpSender::new(self.socket.clone(), client);
-            let request = message.try_into_request().unwrap();
-            self.state.spawner.spawn(self.state
-                .handler
-                .handle_call(client, request)
-                .and_then(move |response| {
-                    // TODO: handle error
-                    let raw = response.into_inner().try_into_raw().unwrap();
-                    sender.send_message(raw).map_err(|e| {
-                        println!("Error: {}", e);
-                        ()
-                    })
-                }));
-        } else if message.class().is_indication() {
-            let indication = message.try_into_indication().unwrap();
-            self.state.spawner.spawn(self.state.handler.handle_cast(client, indication));
-        } else {
-            track_panic!(ErrorKind::Failed,
-                         "Unexpected message class: {:?}",
-                         message.class());
-        }
-        Ok(())
-    }
-}
-impl<H: HandleMessage> Future for UdpServerLoop<H> {
-    type Item = ();
-    type Error = Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match track_try!(self.stream.poll()) {
-            Async::NotReady => Ok(Async::NotReady),
-            Async::Ready(None) => {
-                info!(self.state.logger, "UdpServer terminated");
-                Ok(Async::Ready(()))
-            }
-            Async::Ready(Some((addr, message))) => {
-                debug!(self.state.logger, "Recv from {}: {:?}", addr, message);
-                if let Err(e) = self.handle_message(addr, message) {
-                    warn!(self.state.logger,
-                          "Cannot handle a message from {}: {}",
-                          addr,
-                          e);
+        loop {
+            let (client, message) = if let Either::B(ref mut transport) = self.transport {
+                track_try!(transport.poll_complete());
+                match track_try!(self.response_rx.poll().map_err(|()| ErrorKind::Other)) {
+                    Async::NotReady => {}
+                    Async::Ready(None) => unreachable!(),
+                    Async::Ready(Some((client, Err(error)))) => {
+                        self.handler.handle_error(client, error);
+                    }
+                    Async::Ready(Some((client, Ok(message)))) => {
+                        let started = track_try!(transport.start_send((client, message, None)));
+                        if let AsyncSink::NotReady((client, message, _)) = started {
+                            let e = track!(ErrorKind::Full.error(),
+                                           "Cannot response to transaction {:?}",
+                                           message.transaction_id());
+                            self.handler.handle_error(client, e);
+                        }
+                    }
                 }
-                Ok(Async::NotReady)
+
+                match track_try!(transport.poll()) {
+                    Async::NotReady => return Ok(Async::NotReady),
+                    Async::Ready(None) => return Ok(Async::Ready(())),
+                    Async::Ready(Some((client, message))) => (client, message),
+                }
+            } else {
+                unreachable!()
+            };
+            if let Err(e) = message.and_then(|m| self.handle_message(client, m)) {
+                self.handler.handle_error(client, e);
             }
         }
     }
