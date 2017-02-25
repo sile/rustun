@@ -66,10 +66,10 @@ impl ::Attribute for Attribute {
             Attribute::XorMappedAddress(ref a) => a.get_type(),
         }
     }
-    fn decode(attr: &RawAttribute, message: &RawMessage) -> Result<Self> {
+    fn try_from_raw(attr: &RawAttribute, message: &RawMessage) -> Result<Self> {
         match attr.get_type().as_u16() {
             attributes::TYPE_XOR_MAPPED_ADDRESS => {
-                attributes::XorMappedAddress::decode(attr, message).map(From::from)
+                attributes::XorMappedAddress::try_from_raw(attr, message).map(From::from)
             }
             t => Err(ErrorKind::Unsupported.cause(format!("Unknown attribute: type={}", t))),
         }

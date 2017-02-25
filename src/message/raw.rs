@@ -99,21 +99,24 @@ impl RawMessage {
                            attrs))
     }
 
-    pub fn try_into_request<M, A>(self) -> Result<Request<M, A>>
+    pub fn try_into_request<M, A>(mut self) -> Result<Request<M, A>>
         where M: Method,
               A: Attribute
     {
+        use std::mem;
         track_assert_eq!(self.class, Class::Request, ErrorKind::Other);
         let method = track_try!(M::from_u12(self.method).ok_or(ErrorKind::Other));
-        let mut attrs = Vec::new();
-        for a in self.attributes.iter() {
-            let a = track_try!(A::decode(&a, &self));
-            attrs.push(a);
+        let mut attrs = mem::replace(&mut self.attributes, Vec::new());
+        let mut raw_attrs = Vec::new();
+        for a in attrs {
+            let raw = track_try!(A::try_from_raw(&a, &self));
+            raw_attrs.push(raw);
+            self.attributes.push(a);
         }
         Ok(Request {
             method: method,
             transaction_id: self.transaction_id,
-            attributes: attrs,
+            attributes: raw_attrs,
         })
     }
     pub fn try_into_indication<M, A>(self) -> Result<Indication<M, A>>
@@ -124,7 +127,7 @@ impl RawMessage {
         let method = track_try!(M::from_u12(self.method).ok_or(ErrorKind::Other));
         let mut attrs = Vec::new();
         for a in self.attributes.iter() {
-            let a = track_try!(A::decode(&a, &self));
+            let a = track_try!(A::try_from_raw(&a, &self));
             attrs.push(a);
         }
         Ok(Indication {
@@ -142,7 +145,7 @@ impl RawMessage {
         let method = track_try!(M::from_u12(self.method).ok_or(ErrorKind::Other));
         let mut attrs = Vec::new();
         for a in self.attributes.iter() {
-            let a = track_try!(A::decode(&a, &self));
+            let a = track_try!(A::try_from_raw(&a, &self));
             attrs.push(a);
         }
         if self.class == Class::SuccessResponse {
@@ -217,7 +220,7 @@ impl RawMessage {
     {
         let mut m = RawMessage::new(class, method.as_u12(), transaction_id, Vec::new());
         for attr in attributes {
-            let raw_attr = track_try!(attr.encode(&m));
+            let raw_attr = track_try!(attr.try_to_raw(&m));
             m.attributes.push(raw_attr);
         }
         Ok(m)

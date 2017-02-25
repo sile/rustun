@@ -47,7 +47,7 @@ impl Attribute for XorMappedAddress {
     fn get_type(&self) -> Type {
         Type::new(TYPE_XOR_MAPPED_ADDRESS)
     }
-    fn decode(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
+    fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_XOR_MAPPED_ADDRESS,
                          ErrorKind::Failed);
