@@ -143,7 +143,7 @@ impl<T: Transport> Future for BaseClientLoop<T> {
 
 pub struct BaseCall {
     transaction_id: TransactionId,
-    link: Link<(), (), (), Error>,
+    _link: Link<(), (), (), Error>,
     monitor: Monitor<RawMessage, Error>,
     timeout: Timeout,
     command_tx: Option<mpsc::Sender<Command>>,
@@ -156,7 +156,7 @@ impl BaseCall {
         let _ = client.command_tx.send(Command::Call(message, link1, monitored));
         BaseCall {
             transaction_id: transaction_id,
-            link: link0,
+            _link: link0,
             monitor: monitor,
             timeout: timer::timeout(client.request_timeout),
             command_tx: Some(client.command_tx.clone()),

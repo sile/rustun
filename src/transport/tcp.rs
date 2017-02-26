@@ -8,11 +8,10 @@ use futures::{Future, BoxFuture, Async, Poll, Stream, Sink, AsyncSink, StartSend
 use handy_async::io::{ReadFrom, AsyncWrite};
 use handy_async::io::futures::WriteAll;
 use handy_async::sync_io::ReadExt;
-use handy_async::pattern::{Pattern, Endian, Window};
-use handy_async::pattern::read::U16;
+use handy_async::pattern::{Pattern, Window};
 
 use {Result, Error, ErrorKind};
-use message::{Class, RawMessage};
+use message::RawMessage;
 use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
 
 /// TCP based implementation of [Transport](trait.Transport.html) trait.
