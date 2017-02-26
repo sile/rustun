@@ -15,7 +15,6 @@ pub use attribute::Attribute;
 pub use transport::Transport;
 
 pub mod types;
-pub mod clients;
 pub mod servers;
 pub mod message;
 pub mod transport;

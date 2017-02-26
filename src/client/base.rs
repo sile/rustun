@@ -22,6 +22,10 @@ enum Command {
     Abort(TransactionId),
 }
 
+/// A [Client](trait.Client.html) trait implementation which
+/// can be used as base of other implementations.
+///
+/// This uses `T` as the message transport layer.
 #[derive(Debug)]
 pub struct BaseClient<T> {
     server: SocketAddr,
@@ -32,6 +36,7 @@ pub struct BaseClient<T> {
 impl<T> BaseClient<T>
     where T: Transport + Send + 'static
 {
+    /// Makes a new `BaseClient` instance which communicates with `server`.
     pub fn new<S: Spawn>(spawner: &S, server: SocketAddr, transport: T) -> Self {
         let (command_tx, command_rx) = mpsc::channel();
         spawner.spawn(BaseClientLoop::new(server, transport, command_rx));
@@ -42,18 +47,22 @@ impl<T> BaseClient<T>
             _phantom: PhantomData,
         }
     }
+
+    /// Sets the timeout duration of a request transaction.
+    ///
+    /// The default value is [DEFAULT_TIMEOUT_MS](../constants/constant.DEFAULT_TIMEOUT_MS.html).
     pub fn set_request_timeout(&mut self, timeout: Duration) {
         self.request_timeout = timeout;
     }
 }
 impl<T: Transport> Client for BaseClient<T> {
-    type CallRaw = BaseCall;
-    type CastRaw = BaseCast;
+    type CallRaw = BaseCallRaw;
+    type CastRaw = BaseCastRaw;
     fn call_raw(&mut self, message: RawMessage) -> Self::CallRaw {
-        BaseCall::new(self, message)
+        BaseCallRaw::new(self, message)
     }
     fn cast_raw(&mut self, message: RawMessage) -> Self::CastRaw {
-        BaseCast::new(self, message)
+        BaseCastRaw::new(self, message)
     }
 }
 
@@ -141,20 +150,21 @@ impl<T: Transport> Future for BaseClientLoop<T> {
     }
 }
 
-pub struct BaseCall {
+/// `Future` that handle a request/response transaction issued by `BaseClient`.
+pub struct BaseCallRaw {
     transaction_id: TransactionId,
     _link: Link<(), (), (), Error>,
     monitor: Monitor<RawMessage, Error>,
     timeout: Timeout,
     command_tx: Option<mpsc::Sender<Command>>,
 }
-impl BaseCall {
+impl BaseCallRaw {
     fn new<T>(client: &mut BaseClient<T>, message: RawMessage) -> Self {
         let transaction_id = message.transaction_id().clone();
         let (link0, link1) = oneshot::link();
         let (monitored, monitor) = oneshot::monitor();
         let _ = client.command_tx.send(Command::Call(message, link1, monitored));
-        BaseCall {
+        BaseCallRaw {
             transaction_id: transaction_id,
             _link: link0,
             monitor: monitor,
@@ -163,7 +173,7 @@ impl BaseCall {
         }
     }
 }
-impl Future for BaseCall {
+impl Future for BaseCallRaw {
     type Item = RawMessage;
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
@@ -177,7 +187,7 @@ impl Future for BaseCall {
         Ok(Async::NotReady)
     }
 }
-impl Drop for BaseCall {
+impl Drop for BaseCallRaw {
     fn drop(&mut self) {
         if let Some(command_tx) = self.command_tx.take() {
             let _ = command_tx.send(Command::Abort(self.transaction_id));
@@ -185,21 +195,23 @@ impl Drop for BaseCall {
     }
 }
 
-pub struct BaseCast {
-    _command_tx: mpsc::Sender<Command>, // TODO: note
+/// `Future` that handle a indication transaction issued by `BaseClient`.
+pub struct BaseCastRaw {
     link: Link<(), (), (), Error>,
+    // NOTE: This field is kept to maintain reference count of the receiver side.
+    _command_tx: mpsc::Sender<Command>,
 }
-impl BaseCast {
+impl BaseCastRaw {
     fn new<T>(client: &mut BaseClient<T>, message: RawMessage) -> Self {
         let (link0, link1) = oneshot::link();
         let _ = client.command_tx.send(Command::Cast(message, link1));
-        BaseCast {
+        BaseCastRaw {
             link: link0,
             _command_tx: client.command_tx.clone(),
         }
     }
 }
-impl Future for BaseCast {
+impl Future for BaseCastRaw {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {

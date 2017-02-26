@@ -4,13 +4,13 @@ use {Result, ErrorKind};
 use message::{self, RawMessage};
 use attribute::{self, RawAttribute};
 use types::U12;
-use clients;
+use client;
 
 pub mod methods;
 pub mod attributes;
 pub mod handlers;
 
-pub type UdpClient = clients::UdpClient;
+pub type UdpClient = client::UdpClient;
 // pub type TcpClient = clients::TcpClient;
 
 pub type Request = message::Request<Method, Attribute>;

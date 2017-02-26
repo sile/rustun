@@ -1,0 +1,60 @@
+use std::net::SocketAddr;
+use fibers::Spawn;
+use fibers::net::TcpStream;
+use fibers::net::futures::Connect;
+use futures::{Future, Poll};
+
+use {Client, Error};
+use transport::TcpTransport;
+use message::RawMessage;
+use super::BaseClient;
+
+/// `Future` that handle a request/response transaction issued by `TcpClient`.
+pub type TcpCallRaw =
+    <BaseClient<TcpTransport> as Client>::CallRaw;
+
+/// `Future` that handle a indication transaction issued by `TcpClient`.
+pub type TcpCastRaw =
+    <BaseClient<TcpTransport> as Client>::CastRaw;
+
+/// A [Client](trait.Client.html) trait implementation which
+/// uses [TcpTransport](../transport/struct.TcpTransport.html) as the transport layer.
+pub struct TcpClient(BaseClient<TcpTransport>);
+impl TcpClient {
+    /// Makes a future that results in a `TcpClient` instance which communicates with `server`.
+    pub fn new<S: Spawn>(spawner: S, server: SocketAddr) -> InitTcpClient<S> {
+        InitTcpClient {
+            spawner: spawner,
+            server: server,
+            connect: TcpStream::connect(server),
+        }
+    }
+}
+impl Client for TcpClient {
+    type CallRaw = TcpCallRaw;
+    type CastRaw = TcpCastRaw;
+    fn call_raw(&mut self, message: RawMessage) -> Self::CallRaw {
+        self.0.call_raw(message)
+    }
+    fn cast_raw(&mut self, message: RawMessage) -> Self::CastRaw {
+        self.0.cast_raw(message)
+    }
+}
+
+/// `Future` that results in a `TcpClient` instance.
+pub struct InitTcpClient<S> {
+    spawner: S,
+    server: SocketAddr,
+    connect: Connect,
+}
+impl<S: Spawn> Future for InitTcpClient<S> {
+    type Item = TcpClient;
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        Ok(track_try!(self.connect.poll()).map(|stream| {
+            TcpClient(BaseClient::new(&self.spawner,
+                                      self.server,
+                                      TcpTransport::new(self.server, stream)))
+        }))
+    }
+}
