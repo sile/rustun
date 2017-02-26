@@ -85,7 +85,7 @@ pub const DEFAULT_TIMEOUT_MS: u64 = 39_500;
 /// >
 /// > ([RFC 5389 -- 7.2. Sending the Request or Indication]
 /// > (https://tools.ietf.org/html/rfc5389#section-7.2))
-pub const DEFAULT_MAX_CLIENT_CONCURRENCY: usize = 10;
+pub const DEFAULT_MAX_OUTSTANDING_TRANSACTIONS: usize = 10;
 
 /// The default interval between transactions issued by a client to a serve.
 ///

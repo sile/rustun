@@ -1,72 +1,355 @@
+use std::cmp;
+use std::fmt;
 use std::net::SocketAddr;
-use std::time::{Duration, SystemTime};
-use std::sync::mpsc as std_mpsc;
-use fibers::Spawn;
+use std::collections::BinaryHeap;
+use std::time::{SystemTime, Duration};
 use fibers::net::UdpSocket;
 use fibers::net::futures::{UdpSocketBind, RecvFrom};
-use fibers::time::timer;
-use fibers::sync::oneshot::Monitor;
-use futures::{Future, Poll, Async, BoxFuture};
+use fibers::sync::oneshot::Link;
+use fibers::time::timer::{self, Timeout};
+use futures::{BoxFuture, Future, Stream, Poll, Async, StartSend, Sink, AsyncSink};
 use futures::future::Either;
 
-use {Error, ErrorKind};
+use {Result, Error, ErrorKind};
+use message::{Class, RawMessage};
 use constants;
-use transport::Transport;
-use message::RawMessage;
-use super::FifoRunner;
+use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
 
+/// `UdpTransport` builder.
 #[derive(Debug, Clone)]
 pub struct UdpTransportBuilder {
     bind_addr: SocketAddr,
     rto: Duration,
     rto_cache_duration: Duration,
+    min_transaction_interval: Duration,
+    max_outstanding_transactions: usize,
     recv_buffer_size: usize,
 }
 impl UdpTransportBuilder {
+    /// Makes a new `UdpTransportBuilder` instance with the default settings.
     pub fn new() -> Self {
         UdpTransportBuilder {
             bind_addr: "0.0.0.0:0".parse().unwrap(),
             rto: Duration::from_millis(constants::DEFAULT_RTO_MS),
             rto_cache_duration: Duration::from_millis(constants::DEFAULT_RTO_CACHE_DURATION_MS),
+            min_transaction_interval:
+                Duration::from_millis(constants::DEFAULT_MIN_TRANSACTION_INTERVAL_MS),
+            max_outstanding_transactions: constants::DEFAULT_MAX_OUTSTANDING_TRANSACTIONS,
             recv_buffer_size: constants::DEFAULT_MAX_MESSAGE_SIZE,
         }
     }
+
+    /// Sets the bind address of this UDP socket.
+    ///
+    /// The default address is "0.0.0.0:0".
     pub fn bind_addr(&mut self, addr: SocketAddr) -> &mut Self {
         self.bind_addr = addr;
         self
     }
+
+    /// Sets the initial RTO (retransmission timeout).
+    ///
+    /// The default value is [DEFAULT_RTO_MS](../constants/constant.DEFAULT_RTO_MS.html).
     pub fn rto(&mut self, rto: Duration) -> &mut Self {
         self.rto = rto;
         self
     }
+
+    /// Sets the cache duration of a RTO.
+    ///
+    /// The default value is [DEFAULT_RTO_CACHE_DURATION_MS]
+    /// (../constants/constant.DEFAULT_RTO_CACHE_DURATION_MS.html).
     pub fn rto_cache_duration(&mut self, duration: Duration) -> &mut Self {
         self.rto_cache_duration = duration;
         self
     }
+
+    /// Sets the minimum interval between issuing two consecutive transactions.
+    ///
+    /// The default value is [DEFAULT_RTO_CACHE_DURATION_MS]
+    /// (../constants/constant.DEFAULT_RTO_CACHE_DURATION_MS.html).
+    pub fn min_transaction_interval(&mut self, duration: Duration) -> &mut Self {
+        self.min_transaction_interval = duration;
+        self
+    }
+
+    /// Sets the number of maximum outstanding transactions.
+    ///
+    /// The default value is [DEFAULT_MAX_OUTSTANDING_TRANSACTIONS]
+    /// (../constants/constant.DEFAULT_MAX_OUTSTANDING_TRANSACTIONS.html).
+    pub fn max_outstanding_transactions(&mut self, count: usize) -> &mut Self {
+        self.max_outstanding_transactions = count;
+        self
+    }
+
+    /// Sets the size of the receiving buffer.
+    ///
+    /// If a message that has more than `size` is sent, it will discard silently.
+    ///
+    /// The default value is [DEFAULT_MAX_MESSAGE_SIZE]
+    /// (../constants/constant.DEFAULT_MAX_MESSAGE_SIZE.html).
     pub fn recv_buffer_size(&mut self, size: usize) -> &mut Self {
         self.recv_buffer_size = size;
         self
     }
-    pub fn finish<S: Spawn>(&self, spawner: &S) -> UdpTransportBind {
+
+    /// Builds a future which result in a `UdpTransport` instance.
+    pub fn finish(&self) -> UdpTransportBind {
+        let sink_params = SinkParams {
+            rto: self.rto,
+            rto_cache_duration: self.rto_cache_duration,
+            min_transaction_interval: self.min_transaction_interval,
+            max_outstanding_transactions: self.max_outstanding_transactions,
+        };
         UdpTransportBind {
             future: UdpSocket::bind(self.bind_addr),
-            runner: FifoRunner::new(spawner),
-            params: self.clone(),
+            recv_buffer_size: self.recv_buffer_size,
+            sink_params: sink_params,
         }
     }
 }
 
+#[derive(Debug, Clone)]
+struct SinkParams {
+    rto: Duration,
+    rto_cache_duration: Duration,
+    min_transaction_interval: Duration,
+    max_outstanding_transactions: usize,
+}
+
+/// A `Future` which result in a `UdpTransport` instance that has a binded UDP socket.
+///
+/// This is created by calling `UdpTransportBuilder::finish` method.
+#[derive(Debug)]
 pub struct UdpTransportBind {
     future: UdpSocketBind,
-    runner: FifoRunner<BoxFuture<UdpSocket, Error>>,
-    params: UdpTransportBuilder,
+    recv_buffer_size: usize,
+    sink_params: SinkParams,
 }
 impl Future for UdpTransportBind {
     type Item = UdpTransport;
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        Ok(track_try!(self.future.poll())
-            .map(|socket| UdpTransport::new(socket, self.runner.clone(), self.params.clone())))
+        Ok(track_try!(self.future.poll()).map(|socket| {
+            UdpTransport::new(socket, self.recv_buffer_size, self.sink_params.clone())
+        }))
+    }
+}
+
+/// UDP based implementation of [Transport](trait.Transport.html) trait.
+#[derive(Debug)]
+pub struct UdpTransport {
+    sink: UdpMessageSink,
+    stream: UdpMessageStream,
+}
+impl Transport for UdpTransport {}
+impl MessageSink for UdpTransport {}
+impl MessageStream for UdpTransport {}
+impl UdpTransport {
+    fn new(socket: UdpSocket, recv_buffer_size: usize, sink_params: SinkParams) -> Self {
+        UdpTransport {
+            sink: UdpMessageSink::new(socket.clone(), sink_params),
+            stream: UdpMessageStream::new(socket, vec![0; recv_buffer_size]),
+        }
+    }
+}
+impl Sink for UdpTransport {
+    type SinkItem = MessageSinkItem;
+    type SinkError = Error;
+    fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
+        self.sink.start_send(item)
+    }
+    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        self.sink.poll_complete()
+    }
+}
+impl Stream for UdpTransport {
+    type Item = (SocketAddr, Result<RawMessage>);
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        self.stream.poll()
+    }
+}
+
+#[derive(Debug)]
+struct UdpMessageStream(RecvFrom<Vec<u8>>);
+impl UdpMessageStream {
+    pub fn new(socket: UdpSocket, buf: Vec<u8>) -> Self {
+        UdpMessageStream(socket.recv_from(buf))
+    }
+}
+impl Stream for UdpMessageStream {
+    type Item = (SocketAddr, Result<RawMessage>);
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let polled = track_try!(self.0.poll().map_err(|(_, _, e)| e));
+        if let Async::Ready((socket, buf, size, peer)) = polled {
+            let result = track_err!(RawMessage::read_from(&mut &buf[..size]));
+            self.0 = socket.recv_from(buf);
+            Ok(Async::Ready(Some((peer, result))))
+        } else {
+            Ok(Async::NotReady)
+        }
+    }
+}
+impl MessageStream for UdpMessageStream {}
+
+struct UdpMessageSink {
+    socket: Either<Option<UdpSocket>, BoxFuture<(UdpSocket, SendItem), Error>>,
+    rto_cache: Option<RtoCache>,
+    last_transaction_start_time: Option<SystemTime>,
+    queue: BinaryHeap<SendItem>,
+    params: SinkParams,
+}
+impl UdpMessageSink {
+    fn new(socket: UdpSocket, params: SinkParams) -> Self {
+        UdpMessageSink {
+            socket: Either::A(Some(socket)),
+            rto_cache: None,
+            last_transaction_start_time: None,
+            queue: BinaryHeap::new(),
+            params: params,
+        }
+    }
+    pub fn outstanding_transactions(&self) -> usize {
+        if let Either::A(_) = self.socket {
+            self.queue.len()
+        } else {
+            self.queue.len() + 1
+        }
+    }
+    fn drop_rto_cache_if_expired(&mut self) {
+        if self.rto_cache.as_ref().map_or(false, |c| c.expiry_time <= SystemTime::now()) {
+            self.rto_cache = None;
+        }
+    }
+    fn update_rto_cache_if_needed(&mut self, rto: Duration) {
+        if self.rto_cache.as_ref().map_or(true, |c| c.rto < rto) {
+            self.rto_cache = Some(RtoCache {
+                rto: rto,
+                expiry_time: SystemTime::now() + self.params.rto_cache_duration,
+            });
+        }
+    }
+    fn calc_next_rto(&mut self, class: Class) -> Option<Duration> {
+        if class == Class::Request {
+            self.drop_rto_cache_if_expired();
+            Some(self.rto_cache.as_ref().map_or(self.params.rto, |c| c.rto))
+        } else {
+            None
+        }
+    }
+    fn calc_next_transaction_wait(&mut self,
+                                  class: Class)
+                                  -> Result<Option<(SystemTime, Timeout)>> {
+        if class == Class::SuccessResponse || class == Class::ErrorResponse {
+            return Ok(None);
+        }
+
+        let last = if let Some(last) = self.last_transaction_start_time {
+            last
+        } else {
+            return Ok(None);
+        };
+        let now = SystemTime::now();
+        self.last_transaction_start_time = Some(now);
+
+        let passed_time = track_try!(now.duration_since(last));
+        if passed_time >= self.params.min_transaction_interval {
+            return Ok(None);
+        }
+
+        let duration = self.params.min_transaction_interval - passed_time;
+        let expiry_time = SystemTime::now() + duration;
+        let timeout = timer::timeout(duration);
+        Ok(Some((expiry_time, timeout)))
+    }
+}
+impl Sink for UdpMessageSink {
+    type SinkItem = MessageSinkItem;
+    type SinkError = Error;
+    fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
+        if self.outstanding_transactions() < self.params.max_outstanding_transactions {
+            let (peer, message, link) = item;
+            let class = message.class();
+            let rto = self.calc_next_rto(class);
+            let wait = track_try!(self.calc_next_transaction_wait(class));
+            let send_item = SendItem {
+                wait: wait,
+                peer: peer,
+                message: message,
+                rto: rto,
+                link: link,
+            };
+            self.queue.push(send_item);
+            Ok(AsyncSink::Ready)
+        } else {
+            Ok(AsyncSink::NotReady(item))
+        }
+    }
+    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        let socket = match self.socket {
+            Either::A(_) => None,
+            Either::B(ref mut future) => {
+                if let Async::Ready((socket, item)) = track_try!(future.poll()) {
+                    Some((socket, item))
+                } else {
+                    return Ok(Async::NotReady);
+                }
+            }
+        };
+        if let Some((socket, mut item)) = socket {
+            if let Some(rto) = item.rto {
+                if let Ok(Async::NotReady) = item.link.poll() {
+                    let rto = rto * 2;
+                    let wait = (SystemTime::now() + rto, timer::timeout(rto));
+                    self.update_rto_cache_if_needed(rto);
+                    item.rto = Some(rto);
+                    item.wait = Some(wait);
+                    self.queue.push(item);
+                }
+            }
+            self.socket = Either::A(Some(socket));
+        }
+        if let Some(mut item) = self.queue.pop() {
+            if let Async::Ready(()) = track_try!(item.poll()) {
+                let socket = if let Either::A(ref mut socket) = self.socket {
+                    socket.take().unwrap()
+                } else {
+                    unreachable!()
+                };
+                let future = socket.send_to(item.message.to_bytes(), item.peer);
+                let future = track_err!(future.map_err(|(_, _, e)| e));
+                let future = future.and_then(move |(socket, bytes, sent_size)| {
+                    track_assert_eq!(bytes.len(), sent_size, ErrorKind::Other);
+                    Ok((socket, item))
+                });
+                self.socket = Either::B(future.boxed());
+                self.poll_complete()
+            } else {
+                self.queue.push(item);
+                Ok(Async::NotReady)
+            }
+        } else {
+            Ok(Async::Ready(()))
+        }
+    }
+}
+impl MessageSink for UdpMessageSink {}
+impl fmt::Debug for UdpMessageSink {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "UdpMessageSink {{ socket: ")?;
+        match self.socket {
+            Either::A(ref a) => write!(f, "{:?}, ", a)?,
+            Either::B(_) => write!(f, "BoxFuture {{ .. }}, ")?,
+        }
+        write!(f,
+               "rto_cache: {:?}, last_transaction_start_time: {:?}, queue: {:?}, params: {:?} }}",
+               self.rto_cache,
+               self.last_transaction_start_time,
+               self.queue,
+               self.params)?;
+        Ok(())
     }
 }
 
@@ -76,155 +359,38 @@ struct RtoCache {
     expiry_time: SystemTime,
 }
 
-pub struct UdpTransport {
-    socket: UdpSocket,
-    runner: FifoRunner<BoxFuture<UdpSocket, Error>>,
-    params: UdpTransportBuilder,
-    rto_cache: Option<RtoCache>,
-    rto_cache_tx: std_mpsc::Sender<Duration>,
-    rto_cache_rx: std_mpsc::Receiver<Duration>,
-}
-impl UdpTransport {
-    fn new(socket: UdpSocket,
-           runner: FifoRunner<BoxFuture<UdpSocket, Error>>,
-           params: UdpTransportBuilder)
-           -> Self {
-        let (rto_cache_tx, rto_cache_rx) = std_mpsc::channel();
-        UdpTransport {
-            socket: socket,
-            runner: runner,
-            params: params,
-            rto_cache: None,
-            rto_cache_tx: rto_cache_tx,
-            rto_cache_rx: rto_cache_rx,
-        }
-    }
-    fn update_rto_cache(&mut self) {
-        if let Ok(rto) = self.rto_cache_rx.try_recv() {
-            let expiry_time = SystemTime::now() + self.params.rto_cache_duration;
-            self.rto_cache = Some(RtoCache {
-                rto: rto,
-                expiry_time: expiry_time,
-            });
-        } else if let Some(cache) = self.rto_cache.clone() {
-            if cache.expiry_time <= SystemTime::now() {
-                self.rto_cache = None;
-            }
-        }
-    }
-    fn rto(&self) -> Duration {
-        self.rto_cache.as_ref().map_or(self.params.rto, |c| c.rto)
-    }
-}
-impl Transport for UdpTransport {
-    type SendMessage = UdpSendMessage;
-    type RecvMessage = UdpRecvMessage;
-    fn send_message(&mut self, peer: SocketAddr, message: RawMessage) -> Self::SendMessage {
-        self.update_rto_cache();
-        UdpSendMessage::new(self, peer, message)
-    }
-    fn recv_message(&mut self) -> Self::RecvMessage {
-        UdpRecvMessage::new(self)
-    }
-}
-
-pub struct UdpSendMessage {
+#[derive(Debug)]
+struct SendItem {
+    wait: Option<(SystemTime, Timeout)>,
     peer: SocketAddr,
-    runner: FifoRunner<BoxFuture<UdpSocket, Error>>,
-    start_rto: Duration,
-    current_rto: Duration,
-    rto_cache_tx: std_mpsc::Sender<Duration>,
     message: RawMessage,
-    state: Either<Monitor<UdpSocket, Error>, BoxFuture<UdpSocket, Error>>,
+    rto: Option<Duration>,
+    link: Option<Link<(), Error, (), ()>>,
 }
-impl UdpSendMessage {
-    fn new(transport: &UdpTransport, peer: SocketAddr, message: RawMessage) -> Self {
-        let socket = transport.socket.clone();
-        let rto = transport.rto();
-        let future = transport.runner.register(Self::send_message(socket, &message, peer));
-        UdpSendMessage {
-            peer: peer,
-            runner: transport.runner.clone(),
-            start_rto: rto,
-            current_rto: rto,
-            rto_cache_tx: transport.rto_cache_tx.clone(),
-            message: message,
-            state: Either::A(future),
-        }
-    }
-    fn send_message(socket: UdpSocket,
-                    message: &RawMessage,
-                    peer: SocketAddr)
-                    -> BoxFuture<UdpSocket, Error> {
-        track_err!(socket.send_to(message.to_bytes(), peer).map_err(|(_, _, e)| e))
-            .and_then(|(socket, bytes, sent_size)| {
-                track_assert_eq!(sent_size, bytes.len(), ErrorKind::Other);
-                Ok(socket)
-            })
-            .boxed()
+impl PartialOrd for SendItem {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        other.wait.as_ref().map(|t| &t.0).partial_cmp(&self.wait.as_ref().map(|t| &t.0))
     }
 }
-impl Future for UdpSendMessage {
+impl Ord for SendItem {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        other.wait.as_ref().map(|t| &t.0).cmp(&self.wait.as_ref().map(|t| &t.0))
+    }
+}
+impl PartialEq for SendItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.wait.as_ref().map(|t| &t.0) == other.wait.as_ref().map(|t| &t.0)
+    }
+}
+impl Eq for SendItem {}
+impl Future for SendItem {
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let next_state = match self.state {
-            Either::A(ref mut future) => {
-                if let Async::Ready(socket) = track_try!(future.poll()) {
-                    let rto = self.current_rto;
-                    let timeout = track_err!(timer::timeout(rto).map(move |()| socket));
-                    self.current_rto = rto * 2;
-                    Some(Either::B(timeout.boxed()))
-                } else {
-                    None
-                }
-            }
-            Either::B(ref mut timeout) => {
-                if let Async::Ready(socket) = track_try!(timeout.poll()) {
-                    let future = Self::send_message(socket, &self.message, self.peer);
-                    Some(Either::A(self.runner.register(future)))
-                } else {
-                    None
-                }
-            }
-        };
-        if let Some(state) = next_state {
-            self.state = state;
-            self.poll()
+        if let Some((_, ref mut timeout)) = self.wait {
+            track_err!(timeout.poll())
         } else {
-            Ok(Async::NotReady)
-        }
-    }
-}
-impl Drop for UdpSendMessage {
-    fn drop(&mut self) {
-        if self.start_rto != self.current_rto {
-            let _ = self.rto_cache_tx.send(self.current_rto);
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct UdpRecvMessage {
-    future: RecvFrom<Vec<u8>>,
-}
-
-impl UdpRecvMessage {
-    fn new(transport: &UdpTransport) -> Self {
-        let buf = vec![0; transport.params.recv_buffer_size];
-        UdpRecvMessage { future: transport.socket.clone().recv_from(buf) }
-    }
-}
-impl Future for UdpRecvMessage {
-    type Item = (SocketAddr, RawMessage);
-    type Error = Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let polled = track_try!(self.future.poll().map_err(|(_, _, e)| e));
-        if let Async::Ready((_socket, buf, size, peer)) = polled {
-            let message = track_try!(RawMessage::read_from(&mut &buf[..size]));
-            Ok(Async::Ready((peer, message)))
-        } else {
-            Ok(Async::NotReady)
+            Ok(Async::Ready(()))
         }
     }
 }
