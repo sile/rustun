@@ -7,6 +7,7 @@ use {Result, Error};
 use message::RawMessage;
 
 pub use self::udp::{UdpTransportBuilder, UdpTransport};
+pub use self::tcp::TcpTransport;
 
 pub mod futures {
     //! `Future` trait implementations.
@@ -14,6 +15,7 @@ pub mod futures {
 }
 
 mod udp;
+mod tcp;
 
 /// The type of `SinkItem` of [MessageSink](trait.MessageSink.html).
 ///
@@ -21,7 +23,8 @@ mod udp;
 /// The second is the sending message.
 /// The third is the link with the sending transaction (if it is not `None`);
 /// If it is terminated, you can receive the notification from the link.
-/// And if it is a request transaction, you can terminate it by dropping own link.
+/// And if it is a request transaction,
+/// you can terminate it (e.g., retransmissions in UDP) by dropping own link.
 pub type MessageSinkItem = (SocketAddr, RawMessage, Option<Link<(), Error, (), ()>>);
 
 /// A marker trait representing that the implementation can be used as

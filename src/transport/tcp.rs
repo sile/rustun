@@ -1,87 +1,173 @@
-use std::time::Duration;
+use std::io;
+use std::fmt;
 use std::net::SocketAddr;
+use std::collections::VecDeque;
 use fibers::net::TcpStream;
-use fibers::time::timer;
-use futures::{self, Future, BoxFuture};
-use handy_async::pattern::{Pattern, Window};
-use handy_async::io::{ReadFrom, WriteInto};
-use trackable::error::ErrorKindExt;
+use fibers::sync::oneshot::Link;
+use futures::{Future, BoxFuture, Async, Poll, Stream, Sink, AsyncSink, StartSend};
+use handy_async::io::{ReadFrom, AsyncWrite};
+use handy_async::io::futures::WriteAll;
+use handy_async::sync_io::ReadExt;
+use handy_async::pattern::{Pattern, Endian, Window};
+use handy_async::pattern::read::U16;
 
-use {Error, ErrorKind};
-use message::RawMessage;
-use constants;
-use super::{RecvMessage, SendMessage};
+use {Result, Error, ErrorKind};
+use message::{Class, RawMessage};
+use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
 
+/// TCP based implementation of [Transport](trait.Transport.html) trait.
 #[derive(Debug)]
-pub struct TcpSender {
-    stream: TcpStream,
-    request_timeout: Duration,
+pub struct TcpTransport {
+    sink: TcpMessageSink,
+    stream: TcpMessageStream,
 }
-impl TcpSender {
-    pub fn new(stream: TcpStream) -> Self {
-        TcpSender {
-            stream: stream,
-            request_timeout: Duration::from_millis(constants::DEFAULT_TI_MS),
+impl TcpTransport {
+    /// Makes a new `TcpTransport` instance.
+    pub fn new(peer: SocketAddr, stream: TcpStream) -> Self {
+        TcpTransport {
+            sink: TcpMessageSink::new(peer, stream.clone()),
+            stream: TcpMessageStream::new(peer, stream),
         }
     }
-    pub fn set_request_timeout(&mut self, timeout: Duration) -> &mut Self {
-        self.request_timeout = timeout;
-        self
+}
+impl Transport for TcpTransport {}
+impl MessageSink for TcpTransport {}
+impl MessageStream for TcpTransport {}
+impl Sink for TcpTransport {
+    type SinkItem = MessageSinkItem;
+    type SinkError = Error;
+    fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
+        self.sink.start_send(item)
     }
-    pub fn request_timeout(&self) -> Duration {
-        self.request_timeout
+    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        self.sink.poll_complete()
     }
 }
-impl SendMessage for TcpSender {
-    type Future = TcpSendMessage;
-    fn send_message(&mut self, message: RawMessage) -> Self::Future {
-        let mut buf = Vec::new();
-        let result = track_err!(message.write_to(&mut buf));
-        let stream = self.stream.clone();
-        futures::done(result)
-            .and_then(move |_| {
-                let future = buf.write_into(stream)
-                    .map(|_| ())
-                    .map_err(|e| ErrorKind::Failed.cause(e.into_error()));
-                track_err!(future)
-            })
-            .boxed()
-    }
-    fn send_request(&mut self, message: RawMessage) -> Self::Future {
-        let timeout = timer::timeout(self.request_timeout)
-            .map_err(|e| track!(ErrorKind::Failed.cause(e)))
-            .and_then(|_| Err(ErrorKind::Timeout.into()));
-        let future = self.send_message(message);
-        future.select(timeout).map_err(|(e, _)| e).and_then(|(_, next)| next).boxed()
+impl Stream for TcpTransport {
+    type Item = (SocketAddr, Result<RawMessage>);
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        self.stream.poll()
     }
 }
+
+type MessageSinkState = Option<::std::result::Result<TcpStream, WriteAll<TcpStream, Vec<u8>>>>;
 
 #[derive(Debug)]
-pub struct TcpReceiver(TcpStream);
-impl TcpReceiver {
-    pub fn new(stream: TcpStream) -> Self {
-        TcpReceiver(stream)
+struct TcpMessageSink {
+    peer: SocketAddr,
+    state: MessageSinkState,
+    queue: VecDeque<(RawMessage, Option<Link<(), Error, (), ()>>)>,
+}
+impl TcpMessageSink {
+    fn new(peer: SocketAddr, stream: TcpStream) -> Self {
+        TcpMessageSink {
+            peer: peer,
+            state: Some(Ok(stream)),
+            queue: VecDeque::new(),
+        }
+    }
+    fn poll_complete_impl(&mut self) -> Poll<(), Error> {
+        let mut state = self.state.take().expect("unreachable");
+        loop {
+            match state {
+                Err(mut future) => {
+                    let polled = track_try!(future.poll().map_err(|e| e.into_error()));
+                    if let Async::Ready((socket, _)) = polled {
+                        let (_, link) = self.queue.pop_front().unwrap();
+                        if let Some(link) = link {
+                            link.exit(Ok(()));
+                        }
+                        state = Ok(socket);
+                    } else {
+                        self.state = Some(Err(future));
+                        return Ok(Async::NotReady);
+                    }
+                }
+                Ok(stream) => {
+                    if let Some(&(ref message, _)) = self.queue.front() {
+                        state = Err(stream.async_write_all(message.to_bytes()));
+                    } else {
+                        return Ok(Async::Ready(()));
+                    }
+                }
+            }
+        }
     }
 }
-impl RecvMessage for TcpReceiver {
-    type Future = TcpRecvMessage;
-    fn recv_message(self) -> Self::Future {
-        use handy_async::sync_io::ReadExt;
-        let pattern = vec![0; 20].and_then(|mut buf| {
-            let attrs_len = (&buf[2..4]).read_u16be().unwrap() as usize;
-            buf.resize(20 + attrs_len, 0);
-            Window::new(buf).set_start(20)
-        });
-        pattern.read_from(self.0)
-            .map_err(|e| track!(Error::from_cause(e.into_error())))
-            .and_then(|(stream, buf)| {
-                let peer = track_try!(stream.peer_addr());
-                let message = track_try!(RawMessage::read_from(&mut &buf.into_inner()[..]));
-                Ok((TcpReceiver(stream), peer, message))
-            })
-            .boxed()
+impl Sink for TcpMessageSink {
+    type SinkItem = MessageSinkItem;
+    type SinkError = Error;
+    fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
+        let (addr, message, link) = item;
+        track_assert_eq!(addr, self.peer, ErrorKind::Other);
+        self.queue.push_back((message, link));
+        Ok(AsyncSink::Ready)
     }
-}
+    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        match track_err!(self.poll_complete_impl()) {
+            Err(e) => {
+                for link in self.queue.drain(..).filter_map(|(_, link)| link) {
+                    link.exit(Err(e.clone()));
+                }
+                Err(e)
+            }
+            Ok(v) => Ok(v),
 
-pub type TcpSendMessage = BoxFuture<(), Error>;
-pub type TcpRecvMessage = BoxFuture<(TcpReceiver, SocketAddr, RawMessage), Error>;
+        }
+    }
+}
+impl MessageSink for TcpMessageSink {}
+
+type RecvMessageBytes = BoxFuture<(TcpStream, Vec<u8>), io::Error>;
+
+struct TcpMessageStream {
+    peer: SocketAddr,
+    future: RecvMessageBytes,
+}
+impl TcpMessageStream {
+    fn new(peer: SocketAddr, stream: TcpStream) -> Self {
+        TcpMessageStream {
+            peer: peer,
+            future: Self::recv_message_bytes(stream),
+        }
+    }
+    fn recv_message_bytes(stream: TcpStream) -> RecvMessageBytes {
+        let pattern = vec![0; 20]
+            .and_then(|mut buf| {
+                let message_len = (&mut &buf[2..4]).read_u16be().unwrap();
+                buf.resize(20 + message_len as usize, 0);
+                Window::new(buf).skip(20)
+            })
+            .and_then(|buf| buf.into_inner());
+        pattern.read_from(stream).map_err(|e| e.into_error()).boxed()
+    }
+}
+impl Stream for TcpMessageStream {
+    type Item = (SocketAddr, Result<RawMessage>);
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let polled = track_try!(match self.future.poll() {
+            Err(e) => {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Ok(Async::Ready(None));
+                }
+                Err(e)
+            }
+            Ok(v) => Ok(v),
+        });
+        if let Async::Ready((stream, bytes)) = polled {
+            let message = track_err!(RawMessage::read_from(&mut &bytes[..]));
+            self.future = Self::recv_message_bytes(stream);
+            Ok(Async::Ready(Some((self.peer, message))))
+        } else {
+            Ok(Async::NotReady)
+        }
+    }
+}
+impl MessageStream for TcpMessageStream {}
+impl fmt::Debug for TcpMessageStream {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "TcpMessageStream {{ peer: {:?}, future: _ }}", self.peer)
+    }
+}

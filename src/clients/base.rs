@@ -171,9 +171,6 @@ impl Future for BaseCall {
             self.command_tx = None;
             return Ok(Async::Ready(message));
         }
-        if let Async::Ready(()) = track_try!(self.link.poll()) {
-            return Err(track!(ErrorKind::Other.cause("unreachable")));
-        }
         if let Async::Ready(()) = track_try!(self.timeout.poll()) {
             return Err(track!(ErrorKind::Timeout.error()));
         }
