@@ -1,3 +1,4 @@
+use std::fmt;
 use std::net::SocketAddr;
 use fibers::{Spawn, BoxSpawn};
 use fibers::sync::mpsc;
@@ -10,21 +11,25 @@ use message::{Class, RawMessage};
 use transport::{UdpTransport, UdpTransportBuilder};
 use transport::futures::UdpTransportBind;
 
+/// UDP STUN server.
 #[derive(Debug)]
-pub struct UdpServerBuilder {
+pub struct UdpServer {
     bind_addr: SocketAddr,
 }
-impl UdpServerBuilder {
+impl UdpServer {
+    /// Makes a new `UdpServer` instance which will bind to `bind_addr`.
     pub fn new(bind_addr: SocketAddr) -> Self {
-        UdpServerBuilder { bind_addr: bind_addr }
+        UdpServer { bind_addr: bind_addr }
     }
-    pub fn start<S, H>(&mut self, spawner: S, handler: H) -> UdpServer<H>
+
+    /// Starts the UDP server with `handler`.
+    pub fn start<S, H>(&self, spawner: S, handler: H) -> UdpServerLoop<H>
         where S: Spawn + Send + 'static,
               H: HandleMessage
     {
         let future = UdpTransportBuilder::new().bind_addr(self.bind_addr).finish();
         let (response_tx, response_rx) = mpsc::channel();
-        UdpServer {
+        UdpServerLoop {
             spawner: spawner.boxed(),
             transport: Either::A(future),
             handler: handler,
@@ -34,14 +39,33 @@ impl UdpServerBuilder {
     }
 }
 
-pub struct UdpServer<H> {
+/// `Future` that represent the loop of a UDP server for handling transactions issued by clients.
+pub struct UdpServerLoop<H> {
     spawner: BoxSpawn,
     transport: Either<UdpTransportBind, UdpTransport>,
     handler: H,
     response_tx: mpsc::Sender<(SocketAddr, Result<RawMessage>)>,
     response_rx: mpsc::Receiver<(SocketAddr, Result<RawMessage>)>,
 }
-impl<H: HandleMessage> UdpServer<H> {
+impl<H: fmt::Debug> fmt::Debug for UdpServerLoop<H> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+               "UdpServerLoop {{ spawner: {:?}, transport: {}, handler: {:?}, response_tx: {:?} \
+                response_rx: {:?} }}",
+               self.spawner,
+               match self.transport {
+                   Either::A(ref a) => format!("A({:?})", a),
+                   Either::B(ref b) => format!("B({:?})", b),
+               },
+               self.handler,
+               self.response_tx,
+               self.response_rx)
+    }
+}
+impl<H: HandleMessage> UdpServerLoop<H>
+    where H::HandleCall: Send + 'static,
+          H::HandleCast: Send + 'static
+{
     fn poll_bind_if_needed(&mut self) -> Poll<(), Error> {
         let transport = match self.transport {
             Either::A(ref mut future) => {
@@ -83,7 +107,10 @@ impl<H: HandleMessage> UdpServer<H> {
         }
     }
 }
-impl<H: HandleMessage> Future for UdpServer<H> {
+impl<H: HandleMessage> Future for UdpServerLoop<H>
+    where H::HandleCall: Send + 'static,
+          H::HandleCast: Send + 'static
+{
     type Item = ();
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {

@@ -9,7 +9,7 @@ extern crate rustun;
 use clap::{App, Arg};
 use slog::{Logger, DrainExt, Record, LevelFilter};
 use fibers::{Executor, InPlaceExecutor, Spawn};
-use rustun::servers::UdpServerBuilder;
+use rustun::server::UdpServer;
 use rustun::rfc5389::handlers::DefaultMessageHandler;
 
 fn main() {
@@ -32,7 +32,7 @@ fn main() {
 
     let mut executor = InPlaceExecutor::new().unwrap();
     let spawner = executor.handle();
-    let monitor = executor.spawn_monitor(UdpServerBuilder::new(addr)
+    let monitor = executor.spawn_monitor(UdpServer::new(addr)
         .start(spawner.boxed(), DefaultMessageHandler::with_logger(logger)));
     let result = executor.run_fiber(monitor).unwrap();
     println!("RESULT: {:?}", result);
