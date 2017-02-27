@@ -7,18 +7,18 @@ use message::{Indication, Request, Response};
 
 pub use self::base::BaseServer;
 pub use self::udp::UdpServer;
-//pub use self::tcp::TcpServer;
+pub use self::tcp::TcpServer;
 
 pub mod futures {
     //! `Future` trait implementations.
     pub use super::base::BaseServerLoop;
     pub use super::udp::UdpServerLoop;
-    //    pub use super::tcp::TcpServerLoop;
+    pub use super::tcp::TcpServerLoop;
 }
 
 mod base;
 mod udp;
-//mod tcp;
+mod tcp;
 
 /// This trait allows to handle transactions issued by clients.
 pub trait HandleMessage {

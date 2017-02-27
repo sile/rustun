@@ -109,6 +109,9 @@ impl TcpServerTransport {
         }
     }
 }
+impl Transport for TcpServerTransport {}
+impl MessageSink for TcpServerTransport {}
+impl MessageStream for TcpServerTransport {}
 impl Sink for TcpServerTransport {
     type SinkItem = MessageSinkItem;
     type SinkError = Error;
