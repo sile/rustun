@@ -9,11 +9,6 @@ use message::RawMessage;
 pub use self::udp::{UdpTransportBuilder, UdpTransport};
 pub use self::tcp::{TcpClientTransport, TcpServerTransport};
 
-pub mod futures {
-    //! `Future` trait implementations.
-    pub use super::udp::UdpTransportBind;
-}
-
 mod udp;
 mod tcp;
 

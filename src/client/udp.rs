@@ -1,10 +1,8 @@
 use std::net::SocketAddr;
 use fibers::Spawn;
-use futures::{Future, Poll};
 
-use {Client, Error};
-use transport::{UdpTransport, UdpTransportBuilder};
-use transport::futures::UdpTransportBind;
+use Client;
+use transport::UdpTransport;
 use message::RawMessage;
 use super::BaseClient;
 
@@ -23,24 +21,20 @@ impl UdpClient {
     /// Makes a future that results in a `UdpClient` instance which communicates with `server`.
     ///
     /// If you want to customize the settings of `UdpClient`,
-    /// please use `from_builder` function instead.
-    pub fn new<S: Spawn>(spawner: S, server: SocketAddr) -> InitUdpClient<S> {
-        Self::from_builder(spawner, server, &UdpTransportBuilder::new())
+    /// please use `with_transport` function instead.
+    pub fn new<S: Spawn>(spawner: &S, server: SocketAddr) -> Self {
+        Self::with_transport(spawner, server, UdpTransport::new())
     }
 
     /// Makes a future that results in a `UdpClient` instance which communicates with `server`.
     ///
-    /// The resulting `UdpClient` uses a `UdpTransport` instance
-    /// which have the settings specified by `builder`.
-    pub fn from_builder<S: Spawn>(spawner: S,
-                                  server: SocketAddr,
-                                  builder: &UdpTransportBuilder)
-                                  -> InitUdpClient<S> {
-        InitUdpClient {
-            bind: builder.finish(),
-            spawner: spawner,
-            server: server,
-        }
+    /// The resulting `UdpClient` uses `transport` as the UDP transport layer.
+    pub fn with_transport<S: Spawn>(spawner: &S,
+                                    server: SocketAddr,
+                                    transport: UdpTransport)
+                                    -> Self {
+        let inner = BaseClient::new(spawner, server, transport);
+        UdpClient(inner)
     }
 }
 impl Client for UdpClient {
@@ -51,20 +45,5 @@ impl Client for UdpClient {
     }
     fn cast_raw(&mut self, message: RawMessage) -> Self::CastRaw {
         self.0.cast_raw(message)
-    }
-}
-
-/// `Future` that results in a `UdpClient` instance.
-pub struct InitUdpClient<S> {
-    spawner: S,
-    bind: UdpTransportBind,
-    server: SocketAddr,
-}
-impl<S: Spawn> Future for InitUdpClient<S> {
-    type Item = UdpClient;
-    type Error = Error;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        Ok(track_try!(self.bind.poll())
-            .map(|transport| UdpClient(BaseClient::new(&self.spawner, self.server, transport))))
     }
 }

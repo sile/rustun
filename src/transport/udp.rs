@@ -1,7 +1,7 @@
 use std::cmp;
 use std::fmt;
 use std::net::SocketAddr;
-use std::collections::BinaryHeap;
+use std::collections::{VecDeque, BinaryHeap};
 use std::time::{SystemTime, Duration};
 use fibers::net::UdpSocket;
 use fibers::net::futures::{UdpSocketBind, RecvFrom};
@@ -9,6 +9,7 @@ use fibers::sync::oneshot::Link;
 use fibers::time::timer::{self, Timeout};
 use futures::{BoxFuture, Future, Stream, Poll, Async, StartSend, Sink, AsyncSink};
 use futures::future::Either;
+use trackable::error::ErrorKindExt;
 
 use {Result, Error, ErrorKind};
 use message::{Class, RawMessage};
@@ -94,18 +95,8 @@ impl UdpTransportBuilder {
     }
 
     /// Builds a future which result in a `UdpTransport` instance.
-    pub fn finish(&self) -> UdpTransportBind {
-        let sink_params = SinkParams {
-            rto: self.rto,
-            rto_cache_duration: self.rto_cache_duration,
-            min_transaction_interval: self.min_transaction_interval,
-            max_outstanding_transactions: self.max_outstanding_transactions,
-        };
-        UdpTransportBind {
-            future: UdpSocket::bind(self.bind_addr),
-            recv_buffer_size: self.recv_buffer_size,
-            sink_params: sink_params,
-        }
+    pub fn finish(&self) -> UdpTransport {
+        UdpTransport::from_builder(self)
     }
 }
 
@@ -117,57 +108,132 @@ struct SinkParams {
     max_outstanding_transactions: usize,
 }
 
-/// A `Future` which result in a `UdpTransport` instance that has a binded UDP socket.
-///
-/// This is created by calling `UdpTransportBuilder::finish` method.
 #[derive(Debug)]
-pub struct UdpTransportBind {
+struct UdpTransportBind {
     future: UdpSocketBind,
     recv_buffer_size: usize,
     sink_params: SinkParams,
 }
 impl Future for UdpTransportBind {
-    type Item = UdpTransport;
+    type Item = (UdpMessageSink, UdpMessageStream);
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         Ok(track_try!(self.future.poll()).map(|socket| {
-            UdpTransport::new(socket, self.recv_buffer_size, self.sink_params.clone())
+            let sink = UdpMessageSink::new(socket.clone(), self.sink_params.clone());
+            let stream = UdpMessageStream::new(socket, vec![0; self.recv_buffer_size]);
+            (sink, stream)
         }))
     }
 }
 
+#[derive(Debug)]
+enum UdpTransportInner {
+    Binding {
+        bind: UdpTransportBind,
+        queue: VecDeque<MessageSinkItem>,
+    },
+    Binded {
+        sink: UdpMessageSink,
+        stream: UdpMessageStream,
+    },
+}
+
 /// UDP based implementation of [Transport](trait.Transport.html) trait.
 #[derive(Debug)]
-pub struct UdpTransport {
-    sink: UdpMessageSink,
-    stream: UdpMessageStream,
-}
+pub struct UdpTransport(UdpTransportInner);
 impl Transport for UdpTransport {}
 impl MessageSink for UdpTransport {}
 impl MessageStream for UdpTransport {}
 impl UdpTransport {
-    fn new(socket: UdpSocket, recv_buffer_size: usize, sink_params: SinkParams) -> Self {
-        UdpTransport {
-            sink: UdpMessageSink::new(socket.clone(), sink_params),
-            stream: UdpMessageStream::new(socket, vec![0; recv_buffer_size]),
-        }
+    /// Makes a new `UdpTransport` instance with the default settings.
+    ///
+    /// If you want to customize settings of `UdpTransport`,
+    /// please use `UdpTransportBuilder` instead.
+    pub fn new() -> Self {
+        Self::from_builder(&UdpTransportBuilder::new())
+    }
+
+    fn from_builder(builder: &UdpTransportBuilder) -> Self {
+        let sink_params = SinkParams {
+            rto: builder.rto,
+            rto_cache_duration: builder.rto_cache_duration,
+            min_transaction_interval: builder.min_transaction_interval,
+            max_outstanding_transactions: builder.max_outstanding_transactions,
+        };
+        UdpTransport(UdpTransportInner::Binding {
+            bind: UdpTransportBind {
+                future: UdpSocket::bind(builder.bind_addr),
+                recv_buffer_size: builder.recv_buffer_size,
+                sink_params: sink_params,
+            },
+            queue: VecDeque::new(),
+        })
+    }
+    fn poll_bind_complete(&mut self) -> Result<()> {
+        let next = match self.0 {
+            UdpTransportInner::Binded { .. } => return Ok(()),
+            UdpTransportInner::Binding { ref mut bind, ref mut queue } => {
+                if let Async::Ready((mut sink, stream)) = track_try!(bind.poll()) {
+                    for item in queue.drain(..) {
+                        let started = track_try!(sink.start_send(item));
+                        if let AsyncSink::NotReady((_, _, Some(link))) = started {
+                            let e = ErrorKind::Other.cause(format!("Sink is full"));
+                            link.exit(Err(track!(e)));
+                        }
+                    }
+                    UdpTransportInner::Binded {
+                        sink: sink,
+                        stream: stream,
+                    }
+                } else {
+                    return Ok(());
+                }
+            }
+        };
+        self.0 = next;
+        Ok(())
     }
 }
 impl Sink for UdpTransport {
     type SinkItem = MessageSinkItem;
     type SinkError = Error;
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-        self.sink.start_send(item)
+        match self.0 {
+            UdpTransportInner::Binding { ref mut queue, ref bind } => {
+                if queue.len() >= bind.sink_params.max_outstanding_transactions {
+                    Ok(AsyncSink::NotReady(item))
+                } else {
+                    queue.push_back(item);
+                    Ok(AsyncSink::Ready)
+                }
+            }
+            UdpTransportInner::Binded { ref mut sink, .. } => track_err!(sink.start_send(item)),
+        }
     }
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        self.sink.poll_complete()
+        track_try!(self.poll_bind_complete());
+        match self.0 {
+            UdpTransportInner::Binding { ref queue, .. } => {
+                let ready = if queue.is_empty() {
+                    Async::Ready(())
+                } else {
+                    Async::NotReady
+                };
+                Ok(ready)
+            }
+            UdpTransportInner::Binded { ref mut sink, .. } => track_err!(sink.poll_complete()),
+        }
     }
 }
 impl Stream for UdpTransport {
     type Item = (SocketAddr, Result<RawMessage>);
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.stream.poll()
+        track_try!(self.poll_bind_complete());
+        match self.0 {
+            UdpTransportInner::Binding { .. } => Ok(Async::NotReady),
+            UdpTransportInner::Binded { ref mut stream, .. } => track_err!(stream.poll()),
+        }
     }
 }
 

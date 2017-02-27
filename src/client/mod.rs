@@ -13,7 +13,7 @@ pub mod futures {
     //! `Future` trait implementations.
     pub use super::futures_impl::{Call, Cast};
     pub use super::base::{BaseCallRaw, BaseCastRaw};
-    pub use super::udp::{UdpCallRaw, UdpCastRaw, InitUdpClient};
+    pub use super::udp::{UdpCallRaw, UdpCastRaw};
     pub use super::tcp::{TcpCallRaw, TcpCastRaw, InitTcpClient};
 }
 
