@@ -19,6 +19,7 @@ Add following lines to your `Cargo.toml`:
 [dependencies]
 rustun = "0.1"
 ```
+
 # Examples
 
 A client-side example that issues a Binding request:
@@ -46,3 +47,18 @@ fn main() {
         Err(e) => println!("ERROR: {}", e),
     }
 }
+
+You can run example server and client which handle `Binding` method as follows:
+
+```bash
+# Starts the STUN server in a shell.
+$ cargo run --example binding_srv
+
+# Executes a STUN client in another shell.
+$ cargo run --example binding_cli -- 127.0.0.1
+SUCCEEDE: Ok(SuccessResponse {
+                 method: Binding,
+                 transaction_id: [246, 217, 191, 180, 118, 246, 250, 168, 86, 124, 126, 130],
+                 attributes: [XorMappedAddress(XorMappedAddress(V4(127.0.0.1:61991)))]
+          })
+```
