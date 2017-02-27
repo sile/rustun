@@ -5,7 +5,8 @@ extern crate rustun;
 use clap::{App, Arg};
 use fibers::{Executor, InPlaceExecutor, Spawn};
 use rustun::{Method, Client};
-use rustun::rfc5389::{self, UdpClient};
+use rustun::client::UdpClient;
+use rustun::rfc5389;
 
 fn main() {
     let matches = App::new("rustun_cli")

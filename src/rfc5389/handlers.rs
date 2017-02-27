@@ -27,7 +27,7 @@ impl HandleMessage for DefaultMessageHandler {
                    request: Request<Self::Method, Self::Attribute>)
                    -> Self::HandleCall {
         match *request.method() {
-            super::Method::Binding(_) => {
+            super::Method::Binding => {
                 let mut response = request.into_success_response();
                 response.add_attribute(
                     super::Attribute::XorMappedAddress(

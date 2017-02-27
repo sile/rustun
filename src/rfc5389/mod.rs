@@ -1,47 +1,31 @@
+//! [RFC 5389](https://tools.ietf.org/html/rfc5389) specific components.
 use trackable::error::ErrorKindExt;
 
 use {Result, ErrorKind};
-use message::{self, RawMessage};
+use message::RawMessage;
 use attribute::{self, RawAttribute};
 use types::U12;
-use client;
 
 pub mod methods;
 pub mod attributes;
 pub mod handlers;
 
-pub type UdpClient = client::UdpClient;
-// pub type TcpClient = clients::TcpClient;
-
-pub type Request = message::Request<Method, Attribute>;
-pub type Response = message::Response<Method, Attribute>;
-pub type Indication = message::Indication<Method, Attribute>;
-
+/// Method set that are defined in [RFC 5389](https://tools.ietf.org/html/rfc5389).
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum Method {
-    Binding(methods::Binding),
-}
-impl Method {
-    pub fn binding() -> Self {
-        Method::Binding(methods::Binding)
-    }
+    Binding,
 }
 impl ::Method for Method {
     fn from_u12(value: U12) -> Option<Self> {
         match value.as_u16() {
-            methods::METHOD_BINDING => Some(Method::Binding(methods::Binding)),
+            methods::METHOD_BINDING => Some(Method::Binding),
             _ => None,
         }
     }
     fn as_u12(&self) -> U12 {
         match *self {
-            Method::Binding(ref m) => m.as_u12(),
+            Method::Binding => methods::Binding.as_u12(),
         }
-    }
-}
-impl From<methods::Binding> for Method {
-    fn from(f: methods::Binding) -> Self {
-        Method::Binding(f)
     }
 }
 
