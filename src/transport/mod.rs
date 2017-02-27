@@ -7,7 +7,7 @@ use {Result, Error};
 use message::RawMessage;
 
 pub use self::udp::{UdpTransportBuilder, UdpTransport};
-pub use self::tcp::TcpTransport;
+pub use self::tcp::{TcpClientTransport, TcpServerTransport};
 
 pub mod futures {
     //! `Future` trait implementations.

@@ -1,38 +1,236 @@
 use std::io;
 use std::fmt;
 use std::net::SocketAddr;
-use std::collections::VecDeque;
-use fibers::net::TcpStream;
+use std::collections::{VecDeque, HashMap};
+use std::sync::mpsc::SendError;
+use fibers::{Spawn, BoxSpawn};
+use fibers::net::{TcpStream, TcpListener};
+use fibers::net::futures::{TcpListenerBind, Connected};
+use fibers::net::streams::Incoming;
+use fibers::sync::mpsc;
 use fibers::sync::oneshot::Link;
 use futures::{Future, BoxFuture, Async, Poll, Stream, Sink, AsyncSink, StartSend};
 use handy_async::io::{ReadFrom, AsyncWrite};
 use handy_async::io::futures::WriteAll;
 use handy_async::sync_io::ReadExt;
 use handy_async::pattern::{Pattern, Window};
+use trackable::error::ErrorKindExt;
 
 use {Result, Error, ErrorKind};
 use message::RawMessage;
 use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
 
-/// TCP based implementation of [Transport](trait.Transport.html) trait.
 #[derive(Debug)]
-pub struct TcpTransport {
+enum OutgoingCommand {
+    Send(RawMessage, Option<Link<(), Error, (), ()>>),
+}
+
+#[derive(Debug)]
+enum IncomingCommand {
+    Recv(SocketAddr, Result<RawMessage>),
+    Exit(SocketAddr, Result<()>),
+}
+
+#[derive(Debug)]
+enum Listener {
+    Bind(TcpListenerBind),
+    Incoming(Incoming),
+}
+impl Stream for Listener {
+    type Item = (Connected, SocketAddr);
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        loop {
+            let next = match *self {
+                Listener::Bind(ref mut future) => {
+                    if let Async::Ready(listener) = track_try!(future.poll()) {
+                        Listener::Incoming(listener.incoming())
+                    } else {
+                        return Ok(Async::NotReady);
+                    }
+                }
+                Listener::Incoming(ref mut stream) => return track_err!(stream.poll()),
+            };
+            *self = next;
+        }
+    }
+}
+
+/// TCP based server-side implementation of [Transport](trait.Transport.html) trait.
+#[derive(Debug)]
+pub struct TcpServerTransport {
+    spawner: BoxSpawn,
+    listener: Listener,
+    clients: HashMap<SocketAddr, mpsc::Sender<OutgoingCommand>>,
+    incoming_tx: mpsc::Sender<IncomingCommand>,
+    incoming_rx: mpsc::Receiver<IncomingCommand>,
+}
+impl TcpServerTransport {
+    /// Makes a new `TcpServerTransport` instance.
+    pub fn new<S>(spawner: S, bind_addr: SocketAddr) -> Self
+        where S: Spawn + Send + 'static
+    {
+        let (incoming_tx, incoming_rx) = mpsc::channel();
+        TcpServerTransport {
+            spawner: spawner.boxed(),
+            listener: Listener::Bind(TcpListener::bind(bind_addr)),
+            clients: HashMap::new(),
+            incoming_tx: incoming_tx,
+            incoming_rx: incoming_rx,
+        }
+    }
+    fn handle_new_connection(&mut self, client: SocketAddr, connected: Connected) {
+        let incoming_tx0 = self.incoming_tx.clone();
+        let incoming_tx1 = self.incoming_tx.clone();
+        let (outgoing_tx, outgoing_rx) = mpsc::channel();
+        self.spawner.spawn(track_err!(connected)
+            .and_then(move |stream| {
+                TcpHandleClientLoop::new(client, stream, incoming_tx0, outgoing_rx)
+            })
+            .then(move |result| {
+                let _ = incoming_tx1.send(IncomingCommand::Exit(client, result));
+                Ok(())
+            }));
+        self.clients.insert(client, outgoing_tx);
+    }
+    fn handle_incoming_command(&mut self,
+                               command: IncomingCommand)
+                               -> Option<(SocketAddr, Result<RawMessage>)> {
+        match command {
+            IncomingCommand::Recv(addr, message) => Some((addr, message)),
+            IncomingCommand::Exit(addr, result) => {
+                self.clients.remove(&addr);
+                if let Err(e) = result {
+                    Some((addr, Err(e)))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+impl Sink for TcpServerTransport {
+    type SinkItem = MessageSinkItem;
+    type SinkError = Error;
+    fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
+        let (peer, message, link) = item;
+        let link = if let Some(outgoing_tx) = self.clients.get(&peer) {
+            match outgoing_tx.send(OutgoingCommand::Send(message, link)) {
+                Ok(_) => None,
+                Err(e) => {
+                    let SendError(OutgoingCommand::Send(_, link)) = e;
+                    link
+                }
+            }
+        } else {
+            link
+        };
+        if let Some(link) = link {
+            let e = ErrorKind::Other.cause(format!("No such client found: {}", peer));
+            link.exit(Err(track!(e)));
+        }
+        Ok(AsyncSink::Ready)
+    }
+    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        Ok(Async::Ready(()))
+    }
+}
+impl Stream for TcpServerTransport {
+    type Item = (SocketAddr, Result<RawMessage>);
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        loop {
+            match track_try!(self.listener.poll()) {
+                Async::NotReady => {}
+                Async::Ready(None) => return Ok(Async::Ready(None)),
+                Async::Ready(Some((connected, client))) => {
+                    self.handle_new_connection(client, connected);
+                    continue;
+                }
+            }
+            match track_try!(self.incoming_rx.poll().map_err(|()| ErrorKind::Other)) {
+                Async::NotReady => return Ok(Async::NotReady),
+                Async::Ready(None) => unreachable!(),
+                Async::Ready(Some(command)) => {
+                    if let Some(item) = self.handle_incoming_command(command) {
+                        return Ok(Async::Ready(Some(item)));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TcpHandleClientLoop {
+    peer: SocketAddr,
+    transport: TcpClientTransport,
+    incoming_tx: mpsc::Sender<IncomingCommand>,
+    outgoing_rx: mpsc::Receiver<OutgoingCommand>,
+}
+impl TcpHandleClientLoop {
+    fn new(peer: SocketAddr,
+           stream: TcpStream,
+           incoming_tx: mpsc::Sender<IncomingCommand>,
+           outgoing_rx: mpsc::Receiver<OutgoingCommand>)
+           -> Self {
+        TcpHandleClientLoop {
+            peer: peer,
+            transport: TcpClientTransport::new(peer, stream),
+            incoming_tx: incoming_tx,
+            outgoing_rx: outgoing_rx,
+        }
+    }
+}
+impl Future for TcpHandleClientLoop {
+    type Item = ();
+    type Error = Error;
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            track_try!(self.transport.poll_complete());
+            match track_try!(self.outgoing_rx.poll().map_err(|()| ErrorKind::Other)) {
+                Async::NotReady => {}
+                Async::Ready(None) => return Ok(Async::Ready(())),
+                Async::Ready(Some(command)) => {
+                    let OutgoingCommand::Send(message, link) = command;
+                    track_try!(self.transport.start_send((self.peer, message, link)));
+                    continue;
+                }
+            }
+            match track_try!(self.transport.poll()) {
+                Async::NotReady => return Ok(Async::NotReady),
+                Async::Ready(None) => return Ok(Async::Ready(())),
+                Async::Ready(Some((peer, message))) => {
+                    assert_eq!(peer, self.peer);
+                    let command = IncomingCommand::Recv(peer, message);
+                    let _ = self.incoming_tx.send(command);
+                }
+            }
+        }
+    }
+}
+
+/// TCP based client-side implementation of [Transport](trait.Transport.html) trait.
+///
+/// This can only communicate with pre-connected peer (server).
+#[derive(Debug)]
+pub struct TcpClientTransport {
     sink: TcpMessageSink,
     stream: TcpMessageStream,
 }
-impl TcpTransport {
-    /// Makes a new `TcpTransport` instance.
+impl TcpClientTransport {
+    /// Makes a new `TcpClientTransport` instance.
     pub fn new(peer: SocketAddr, stream: TcpStream) -> Self {
-        TcpTransport {
+        TcpClientTransport {
             sink: TcpMessageSink::new(peer, stream.clone()),
             stream: TcpMessageStream::new(peer, stream),
         }
     }
 }
-impl Transport for TcpTransport {}
-impl MessageSink for TcpTransport {}
-impl MessageStream for TcpTransport {}
-impl Sink for TcpTransport {
+impl Transport for TcpClientTransport {}
+impl MessageSink for TcpClientTransport {}
+impl MessageStream for TcpClientTransport {}
+impl Sink for TcpClientTransport {
     type SinkItem = MessageSinkItem;
     type SinkError = Error;
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
@@ -42,7 +240,7 @@ impl Sink for TcpTransport {
         self.sink.poll_complete()
     }
 }
-impl Stream for TcpTransport {
+impl Stream for TcpClientTransport {
     type Item = (SocketAddr, Result<RawMessage>);
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {

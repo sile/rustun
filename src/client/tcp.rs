@@ -5,21 +5,21 @@ use fibers::net::futures::Connect;
 use futures::{Future, Poll};
 
 use {Client, Error};
-use transport::TcpTransport;
+use transport::TcpClientTransport;
 use message::RawMessage;
 use super::BaseClient;
 
 /// `Future` that handle a request/response transaction issued by `TcpClient`.
 pub type TcpCallRaw =
-    <BaseClient<TcpTransport> as Client>::CallRaw;
+    <BaseClient<TcpClientTransport> as Client>::CallRaw;
 
 /// `Future` that handle a indication transaction issued by `TcpClient`.
 pub type TcpCastRaw =
-    <BaseClient<TcpTransport> as Client>::CastRaw;
+    <BaseClient<TcpClientTransport> as Client>::CastRaw;
 
 /// A [Client](trait.Client.html) trait implementation which
-/// uses [TcpTransport](../transport/struct.TcpTransport.html) as the transport layer.
-pub struct TcpClient(BaseClient<TcpTransport>);
+/// uses [TcpClientTransport](../transport/struct.TcpClientTransport.html) as the transport layer.
+pub struct TcpClient(BaseClient<TcpClientTransport>);
 impl TcpClient {
     /// Makes a future that results in a `TcpClient` instance which communicates with `server`.
     pub fn new<S: Spawn>(spawner: S, server: SocketAddr) -> InitTcpClient<S> {
@@ -54,7 +54,7 @@ impl<S: Spawn> Future for InitTcpClient<S> {
         Ok(track_try!(self.connect.poll()).map(|stream| {
             TcpClient(BaseClient::new(&self.spawner,
                                       self.server,
-                                      TcpTransport::new(self.server, stream)))
+                                      TcpClientTransport::new(self.server, stream)))
         }))
     }
 }
