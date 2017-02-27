@@ -25,7 +25,7 @@
 use rand;
 
 use {Method, Attribute};
-use types::{TransactionId, ErrorCode};
+use types::TransactionId;
 use method::{Requestable, Indicatable};
 
 pub use self::raw::{RawMessage, Class};
@@ -90,10 +90,8 @@ impl<M, A> Request<M, A>
     }
 
     /// Converts into an error response message.
-    pub fn into_error_response<E>(self, error_code: E) -> ErrorResponse<M, A>
-        where E: Into<ErrorCode>
-    {
-        ErrorResponse::new(self.method, self.transaction_id, error_code.into())
+    pub fn into_error_response(self) -> ErrorResponse<M, A> {
+        ErrorResponse::new(self.method, self.transaction_id)
     }
 }
 
@@ -209,8 +207,7 @@ impl<M, A> ErrorResponse<M, A>
     where M: Method,
           A: Attribute
 {
-    fn new(method: M, transaction_id: TransactionId, _error_code: ErrorCode) -> Self {
-        // TODO: handle `_error_code`
+    fn new(method: M, transaction_id: TransactionId) -> Self {
         ErrorResponse {
             method: method,
             transaction_id: transaction_id,
