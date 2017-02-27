@@ -24,7 +24,7 @@
 //!
 //!     let monitor = executor.spawn_monitor(future);
 //!     match executor.run_fiber(monitor).unwrap() {
-//!         Ok(v) => println!("SUCCEEDE: {:?}", v),
+//!         Ok(v) => println!("OK: {:?}", v),
 //!         Err(e) => println!("ERROR: {}", e),
 //!     }
 //! }
@@ -38,11 +38,11 @@
 //!
 //! # Executes a STUN client in another shell.
 //! $ cargo run --example binding_cli -- 127.0.0.1
-//! SUCCEEDE: Ok(SuccessResponse {
-//!                  method: Binding,
-//!                  transaction_id: [246, 217, 191, 180, 118, 246, 250, 168, 86, 124, 126, 130],
-//!                  attributes: [XorMappedAddress(XorMappedAddress(V4(127.0.0.1:61991)))]
-//!           })
+//! OK: Ok(SuccessResponse {
+//!            method: Binding,
+//!            transaction_id: [246, 217, 191, 180, 118, 246, 250, 168, 86, 124, 126, 130],
+//!            attributes: [XorMappedAddress(XorMappedAddress(V4(127.0.0.1:61991)))]
+//!       })
 //! ```
 #![warn(missing_docs)]
 

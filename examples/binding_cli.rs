@@ -30,7 +30,7 @@ fn main() {
     let request = rfc5389::methods::Binding.request::<rfc5389::Attribute>();
     let monitor = executor.spawn_monitor(client.call(request));
     match executor.run_fiber(monitor).unwrap() {
-        Ok(v) => println!("SUCCEEDE: {:?}", v),
+        Ok(v) => println!("OK: {:?}", v),
         Err(e) => println!("ERROR: {}", e),
     }
 }
