@@ -300,7 +300,7 @@ impl Sink for TcpMessageSink {
     type SinkError = Error;
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
         let (addr, message, link) = item;
-        track_assert_eq!(addr, self.peer, ErrorKind::Other);
+        track_assert_eq!(addr, self.peer, ErrorKind::Invalid);
         self.queue.push_back((message, link));
         Ok(AsyncSink::Ready)
     }

@@ -64,7 +64,7 @@ impl<T, H> BaseServerLoop<T, H>
                 Ok(())
             }
             other => {
-                let e = ErrorKind::Other.cause(format!("Unexpected class: {:?}", other));
+                let e = ErrorKind::Invalid.cause(format!("Unexpected class: {:?}", other));
                 Err(track!(e))
             }
         }

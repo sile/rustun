@@ -15,7 +15,6 @@ pub use attribute::Attribute;
 pub use transport::Transport;
 
 pub mod types;
-// pub mod servers;
 pub mod message;
 pub mod transport;
 pub mod attribute;
@@ -27,4 +26,5 @@ mod error;
 pub mod client;
 pub mod server;
 
+/// A specialized `Result` type for this crate.
 pub type Result<T> = ::std::result::Result<T, Error>;

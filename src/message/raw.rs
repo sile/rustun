@@ -1,6 +1,7 @@
 use std::mem;
 use std::io::{self, Read, Write};
 use handy_async::sync_io::{ReadExt, WriteExt};
+use trackable::error::ErrorKindExt;
 
 use {Result, Method, Attribute, ErrorKind};
 use types::{U12, TransactionId};
@@ -192,7 +193,7 @@ impl RawMessage {
         }
         let attrs_len = temp_writer.get_ref().len() - 20;
         track_assert!(attrs_len < 0x10000,
-                      ErrorKind::Failed,
+                      ErrorKind::Invalid,
                       "Too large message length: actual={}, limit=0xFFFF",
                       attrs_len);
         temp_writer.set_position(2);
@@ -209,12 +210,12 @@ impl RawMessage {
         let message_type = track_try!(Type::from_u16(message_type));
         let message_len = track_try!(reader.read_u16be());
         track_assert!(message_len % 4 == 0,
-                      ErrorKind::NotStunMessage,
+                      ErrorKind::Invalid,
                       "Unexpected message length: {} % 4 != 0",
                       message_len);
         let magic_cookie = track_try!(reader.read_u32be());
         track_assert!(magic_cookie == MAGIC_COOKIE,
-                      ErrorKind::NotStunMessage,
+                      ErrorKind::Invalid,
                       "Unexpected magic cookie: actual={}, expected={}",
                       magic_cookie,
                       MAGIC_COOKIE);;
@@ -236,7 +237,7 @@ impl RawMessage {
 
     /// Tries to convert into the corresponding request message.
     pub fn try_into_request<M: Method, A: Attribute>(self) -> Result<Request<M, A>> {
-        track_assert_eq!(self.class, Class::Request, ErrorKind::Other);
+        track_assert_eq!(self.class, Class::Request, ErrorKind::Invalid);
         let (method, transaction_id, attrs) = track_try!(self.try_into());
         Ok(Request {
             method: method,
@@ -247,7 +248,7 @@ impl RawMessage {
 
     /// Tries to convert into the corresponding indication message.
     pub fn try_into_indication<M: Method, A: Attribute>(self) -> Result<Indication<M, A>> {
-        track_assert_eq!(self.class, Class::Indication, ErrorKind::Other);
+        track_assert_eq!(self.class, Class::Indication, ErrorKind::Invalid);
         let (method, transaction_id, attrs) = track_try!(self.try_into());
         Ok(Indication {
             method: method,
@@ -260,7 +261,7 @@ impl RawMessage {
     pub fn try_into_response<M: Method, A: Attribute>(self) -> Result<Response<M, A>> {
         let class = self.class;
         track_assert!(class == Class::SuccessResponse || class == Class::ErrorResponse,
-                      ErrorKind::Other);
+                      ErrorKind::Invalid);
         let (method, transaction_id, attrs) = track_try!(self.try_into());
         if class == Class::SuccessResponse {
             Ok(Ok(SuccessResponse {
@@ -324,7 +325,9 @@ impl RawMessage {
         Ok(m)
     }
     fn try_into<M: Method, A: Attribute>(mut self) -> Result<(M, TransactionId, Vec<A>)> {
-        let method = track_try!(M::from_u12(self.method).ok_or(ErrorKind::Other));
+        let method = track_try!(M::from_u12(self.method).ok_or_else(|| {
+            ErrorKind::Unsupported.cause(format!("Unknown method: {:?}", self.method))
+        }));
         let attrs_len = self.attributes.len();
         let src_attrs = mem::replace(&mut self.attributes, Vec::with_capacity(attrs_len));
         let mut dst_attrs = Vec::with_capacity(attrs_len);
@@ -408,7 +411,7 @@ impl Type {
 
     pub fn from_u16(value: u16) -> Result<Self> {
         track_assert!(value >> 14 == 0,
-                      ErrorKind::NotStunMessage,
+                      ErrorKind::Invalid,
                       "First two-bits of STUN message must be 0");
         let class = ((value >> 4) & 0b01) | ((value >> 7) & 0b10);
         let class = Class::from_u8(class as u8).unwrap();

@@ -67,7 +67,7 @@ impl Attribute for MappedAddress {
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_MAPPED_ADDRESS,
-                         ErrorKind::Failed);
+                         ErrorKind::Unsupported);
         let addr = track_try!(read_socket_addr(&mut attr.value()));
         Ok(Self::new(addr))
     }
@@ -102,7 +102,7 @@ impl Attribute for AlternateServer {
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_ALTERNATE_SERVER,
-                         ErrorKind::Failed);
+                         ErrorKind::Unsupported);
         let addr = track_try!(read_socket_addr(&mut attr.value()));
         Ok(Self::new(addr))
     }
@@ -148,9 +148,11 @@ impl Attribute for Username {
         Type::new(TYPE_USERNAME)
     }
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
-        track_assert_eq!(attr.get_type().as_u16(), TYPE_USERNAME, ErrorKind::Failed);
+        track_assert_eq!(attr.get_type().as_u16(),
+                         TYPE_USERNAME,
+                         ErrorKind::Unsupported);
         let name = track_try!((&mut attr.value()).read_all_string());
-        track_assert!(name.len() < 513, ErrorKind::Other);
+        track_assert!(name.len() < 513, ErrorKind::Invalid);
         Ok(Self::new(name).unwrap())
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
@@ -189,8 +191,8 @@ impl Attribute for MessageIntegrity {
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_MESSAGE_INTEGRITY,
-                         ErrorKind::Failed);
-        track_assert_eq!(attr.value().len(), 20, ErrorKind::Other);
+                         ErrorKind::Unsupported);
+        track_assert_eq!(attr.value().len(), 20, ErrorKind::Invalid);
         let mut hmac_sha1 = [0; 20];
         (&mut hmac_sha1[..]).copy_from_slice(attr.value());
         Ok(Self::new(hmac_sha1))
@@ -240,13 +242,15 @@ impl Attribute for ErrorCode {
         Type::new(TYPE_ERROR_CODE)
     }
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
-        track_assert_eq!(attr.get_type().as_u16(), TYPE_ERROR_CODE, ErrorKind::Failed);
+        track_assert_eq!(attr.get_type().as_u16(),
+                         TYPE_ERROR_CODE,
+                         ErrorKind::Unsupported);
         let mut reader = &mut attr.value();
         let value = track_try!(reader.read_u32be());
         let class = (value >> 8) & 0b111;
         let number = value & 0b11111111;
-        track_assert!(3 <= class && class < 6, ErrorKind::Other);
-        track_assert!(number < 100, ErrorKind::Other);
+        track_assert!(3 <= class && class < 6, ErrorKind::Invalid);
+        track_assert!(number < 100, ErrorKind::Invalid);
 
         let code = (class * 100 + number) as u16;
         let reason = track_try!(reader.read_all_string());
@@ -289,7 +293,7 @@ impl Attribute for UnknownAttributes {
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_UNKNOWN_ATTRIBUTES,
-                         ErrorKind::Failed);
+                         ErrorKind::Unsupported);
         let count = attr.value().len() / 2;
         let mut unknowns = Vec::with_capacity(count);
         let mut reader = &mut attr.value();
@@ -344,10 +348,10 @@ impl Attribute for Realm {
         Type::new(TYPE_REALM)
     }
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
-        track_assert_eq!(attr.get_type().as_u16(), TYPE_REALM, ErrorKind::Failed);
+        track_assert_eq!(attr.get_type().as_u16(), TYPE_REALM, ErrorKind::Unsupported);
         let mut reader = &mut attr.value();
         let text = track_try!(reader.read_all_string());
-        track_assert!(text.chars().count() < 128, ErrorKind::Other);
+        track_assert!(text.chars().count() < 128, ErrorKind::Invalid);
         Ok(Self::new(text).unwrap())
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
@@ -391,10 +395,10 @@ impl Attribute for Nonce {
         Type::new(TYPE_NONCE)
     }
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
-        track_assert_eq!(attr.get_type().as_u16(), TYPE_NONCE, ErrorKind::Failed);
+        track_assert_eq!(attr.get_type().as_u16(), TYPE_NONCE, ErrorKind::Unsupported);
         let mut reader = &mut attr.value();
         let value = track_try!(reader.read_all_string());
-        track_assert!(value.chars().count() < 128, ErrorKind::Other);
+        track_assert!(value.chars().count() < 128, ErrorKind::Invalid);
         Ok(Self::new(value).unwrap())
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
@@ -433,8 +437,8 @@ impl Attribute for Fingerprint {
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_FINGERPRINT,
-                         ErrorKind::Failed);
-        track_assert_eq!(attr.value().len(), 4, ErrorKind::Other);
+                         ErrorKind::Unsupported);
+        track_assert_eq!(attr.value().len(), 4, ErrorKind::Invalid);
         let mut reader = &mut attr.value();
         let crc32 = track_try!(reader.read_u32be());
         Ok(Self::new(crc32))
@@ -478,10 +482,12 @@ impl Attribute for Software {
         Type::new(TYPE_SOFTWARE)
     }
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
-        track_assert_eq!(attr.get_type().as_u16(), TYPE_SOFTWARE, ErrorKind::Failed);
+        track_assert_eq!(attr.get_type().as_u16(),
+                         TYPE_SOFTWARE,
+                         ErrorKind::Unsupported);
         let mut reader = &mut attr.value();
         let description = track_try!(reader.read_all_string());
-        track_assert!(description.chars().count() < 128, ErrorKind::Other);
+        track_assert!(description.chars().count() < 128, ErrorKind::Invalid);
         Ok(Self::new(description).unwrap())
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
@@ -527,7 +533,7 @@ impl Attribute for XorMappedAddress {
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_XOR_MAPPED_ADDRESS,
-                         ErrorKind::Failed);
+                         ErrorKind::Unsupported);
         let xor_addr = track_try!(read_socket_addr(&mut attr.value()));
         let addr = Self::xor_addr(xor_addr);
         Ok(Self::new(addr))
