@@ -46,6 +46,7 @@ macro_rules! impl_attr_from {
 }
 
 /// Attribute set that are defined in [RFC 5389](https://tools.ietf.org/html/rfc5389).
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Attribute {
     MappedAddress(attributes::MappedAddress),
