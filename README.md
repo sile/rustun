@@ -47,6 +47,7 @@ fn main() {
         Err(e) => println!("ERROR: {}", e),
     }
 }
+```
 
 You can run example server and client which handle `Binding` method as follows:
 
