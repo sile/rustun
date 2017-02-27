@@ -5,8 +5,7 @@ rustun
 [![Build Status](https://travis-ci.org/sile/rustun.svg?branch=master)](https://travis-ci.org/sile/rustun)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-An asynchronous implementation of STUN [[RFC 5389](https://tools.ietf.org/html/rfc5389)]
-server and client written in Rust.
+A Rust library for implementing STUN [[RFC 5389](https://tools.ietf.org/html/rfc5389)] server and client asynchronously.
 
 [Documentation](https://docs.rs/rustun)
 
