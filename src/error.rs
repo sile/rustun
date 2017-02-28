@@ -34,7 +34,7 @@ impl error::ErrorKind for ErrorKind {
             ErrorKind::Unsupported => {
                 "The input is valid, but requires unsupported features by this agent."
             }
-            ErrorKind::Other => "Some error happend",
+            ErrorKind::Other => "Some error happened",
         }
     }
 }
