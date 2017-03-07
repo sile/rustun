@@ -1,14 +1,13 @@
 //! Individual Definition of the attributes that are defined in [RFC 5389]
 //! (https://tools.ietf.org/html/rfc5389).
-use std::io::{Read, Write, Cursor};
-use std::net::{SocketAddr, IpAddr};
+use std::io::{Write, Cursor};
+use std::net::SocketAddr;
 use handy_async::sync_io::{ReadExt, WriteExt};
-use trackable::error::ErrorKindExt;
 
 use {Result, Attribute, ErrorKind};
 use message::RawMessage;
 use attribute::{Type, RawAttribute};
-use constants;
+use types::SocketAddrValue;
 
 /// The codepoint of the [MappedAddress](struct.MappedAddress.html) attribute.
 pub const TYPE_MAPPED_ADDRESS: u16 = 0x0001;
@@ -68,12 +67,12 @@ impl Attribute for MappedAddress {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_MAPPED_ADDRESS,
                          ErrorKind::Unsupported);
-        let addr = track_try!(read_socket_addr(&mut attr.value()));
-        Ok(Self::new(addr))
+        let addr = track_try!(SocketAddrValue::read_from(&mut attr.value()));
+        Ok(Self::new(addr.address()))
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
-        track_try!(write_socket_addr(&mut buf, self.0));
+        track_try!(SocketAddrValue::new(self.0).write_to(&mut buf));
         Ok(buf)
     }
 }
@@ -103,12 +102,12 @@ impl Attribute for AlternateServer {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_ALTERNATE_SERVER,
                          ErrorKind::Unsupported);
-        let addr = track_try!(read_socket_addr(&mut attr.value()));
-        Ok(Self::new(addr))
+        let addr = track_try!(SocketAddrValue::read_from(&mut attr.value()));
+        Ok(Self::new(addr.address()))
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
-        track_try!(write_socket_addr(&mut buf, self.0));
+        track_try!(SocketAddrValue::new(self.0).write_to(&mut buf));
         Ok(buf)
     }
 }
@@ -511,76 +510,23 @@ impl XorMappedAddress {
     pub fn address(&self) -> SocketAddr {
         self.0
     }
-
-    fn xor_addr(addr: SocketAddr) -> SocketAddr {
-        match addr.ip() {
-            IpAddr::V4(ip) => {
-                let mut octets = ip.octets();
-                for i in 0..octets.len() {
-                    octets[i] ^= (constants::MAGIC_COOKIE >> (24 - i * 8)) as u8;
-                }
-                let xor_ip = From::from(octets);
-                SocketAddr::new(IpAddr::V4(xor_ip), addr.port())
-            }
-            IpAddr::V6(_ip) => panic!(),
-        }
-    }
 }
 impl Attribute for XorMappedAddress {
     fn get_type(&self) -> Type {
         Type::new(TYPE_XOR_MAPPED_ADDRESS)
     }
-    fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
+    fn try_from_raw(attr: &RawAttribute, message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_XOR_MAPPED_ADDRESS,
                          ErrorKind::Unsupported);
-        let xor_addr = track_try!(read_socket_addr(&mut attr.value()));
-        let addr = Self::xor_addr(xor_addr);
+        let xor_addr = track_try!(SocketAddrValue::read_from(&mut attr.value()));
+        let addr = xor_addr.xor(message.transaction_id()).address();
         Ok(Self::new(addr))
     }
-    fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
-        let xor_addr = Self::xor_addr(self.0);
+    fn encode_value(&self, message: &RawMessage) -> Result<Vec<u8>> {
+        let xor_addr = SocketAddrValue::new(self.0).xor(message.transaction_id());
         let mut buf = Vec::new();
-        track_try!(write_socket_addr(&mut buf, xor_addr));
+        track_try!(xor_addr.write_to(&mut buf));
         Ok(buf)
     }
-}
-
-fn read_socket_addr<R: Read>(reader: &mut R) -> Result<SocketAddr> {
-    let _ = track_try!(reader.read_u8());
-    let family = track_try!(reader.read_u8());
-    let port = track_try!(reader.read_u16be());
-    let ip = match family {
-        1 => {
-            let ip = track_try!(reader.read_u32be());
-            IpAddr::V4(From::from(ip))
-        }
-        2 => {
-            let mut octets = [0; 16];
-            track_try!(reader.read_exact(&mut octets[..]));
-            IpAddr::V6(From::from(octets))
-        }
-        _ => {
-            let message = format!("Unsupported address family: {}", family);
-            return Err(ErrorKind::Unsupported.cause(message));
-        }
-    };
-    Ok(SocketAddr::new(ip, port))
-}
-
-fn write_socket_addr<W: Write>(writer: &mut W, addr: SocketAddr) -> Result<()> {
-    track_try!(writer.write_u8(0));
-    match addr.ip() {
-        IpAddr::V4(ip) => {
-            track_try!(writer.write_u8(1));
-            track_try!(writer.write_u16be(addr.port()));
-            track_try!(writer.write_all(&ip.octets()));
-        }
-        IpAddr::V6(ip) => {
-            track_try!(writer.write_u8(2));
-            track_try!(writer.write_u16be(addr.port()));
-            track_try!(writer.write_all(&ip.octets()));
-        }
-    }
-    Ok(())
 }
