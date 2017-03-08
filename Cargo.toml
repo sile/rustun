@@ -11,12 +11,13 @@ keywords = ["STUN", "asynchronous"]
 license = "MIT"
 
 [dependencies]
+crc = "1"
 slog = "1"
+rand = "0.3"
 fibers = "0.1"
 futures = "0.1"
-rand = "0.3"
-handy_async = "0.2"
 trackable = "0.1"
+handy_async = "0.2"
 
 [dev-dependencies]
 clap = "2"

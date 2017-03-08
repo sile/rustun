@@ -46,6 +46,7 @@
 //! ```
 #![warn(missing_docs)]
 
+extern crate crc;
 #[macro_use]
 extern crate slog;
 extern crate rand;
