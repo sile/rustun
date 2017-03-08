@@ -8,6 +8,7 @@ use types::U12;
 
 pub mod methods;
 pub mod attributes;
+pub mod errors;
 pub mod handlers;
 
 /// Method set that are defined in [RFC 5389](https://tools.ietf.org/html/rfc5389).

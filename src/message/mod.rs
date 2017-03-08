@@ -27,6 +27,7 @@ use rand;
 use {Method, Attribute};
 use types::TransactionId;
 use method::{Requestable, Indicatable};
+use rfc5389::attributes::ErrorCode;
 
 pub use self::raw::{RawMessage, Class};
 
@@ -225,6 +226,13 @@ impl<M, A> ErrorResponse<M, A>
     pub fn with_attribute<T: Into<A>>(mut self, attribute: T) -> Self {
         self.add_attribute(attribute);
         self
+    }
+
+    /// Adds the `ErrorCode` attribute to the tail of the attributes of this message.
+    pub fn with_error_code<T: Into<ErrorCode>>(self, error_code: T) -> Self
+        where A: From<ErrorCode>
+    {
+        self.with_attribute(error_code.into())
     }
 
     /// Returns the method of this message.

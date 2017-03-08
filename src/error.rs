@@ -4,11 +4,14 @@ use std::sync::mpsc::RecvError;
 use trackable::error::{self, IntoTrackableError, TrackableError, ErrorKindExt};
 use fibers::sync::oneshot::MonitorError;
 
+use rfc5389::attributes::ErrorCode;
+use rfc5389::errors;
+
 /// The error type for this crate.
 pub type Error = TrackableError<ErrorKind>;
 
 /// A list of error kind.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum ErrorKind {
     /// The operation timed out.
     Timeout,
@@ -22,6 +25,9 @@ pub enum ErrorKind {
     /// The input is valid, but requires unsupported features by this agent.
     Unsupported,
 
+    /// An error specified by the `ErrorCode` instance.
+    ErrorCode(ErrorCode),
+
     /// Other errors.
     Other,
 }
@@ -34,7 +40,20 @@ impl error::ErrorKind for ErrorKind {
             ErrorKind::Unsupported => {
                 "The input is valid, but requires unsupported features by this agent."
             }
+            ErrorKind::ErrorCode(ref e) => e.reason_phrase(),
             ErrorKind::Other => "Some error happened",
+        }
+    }
+}
+impl From<ErrorKind> for ErrorCode {
+    fn from(f: ErrorKind) -> Self {
+        match f {
+            ErrorKind::Timeout => ErrorCode::new(408, "Request Timeout".to_string()).unwrap(),
+            ErrorKind::Full => ErrorCode::new(503, "Service Unavailable".to_string()).unwrap(),
+            ErrorKind::Invalid => errors::BadRequest.into(),
+            ErrorKind::Unsupported => ErrorCode::new(501, "Not Implemented".to_string()).unwrap(),
+            ErrorKind::ErrorCode(code) => code,
+            ErrorKind::Other => errors::ServerError.into(),
         }
     }
 }
