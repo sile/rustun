@@ -47,6 +47,8 @@
 #![warn(missing_docs)]
 
 extern crate crc;
+extern crate md5;
+extern crate hmacsha1;
 #[macro_use]
 extern crate slog;
 extern crate rand;

@@ -1,7 +1,5 @@
 //! [RFC 5389](https://tools.ietf.org/html/rfc5389) specific components.
-use trackable::error::ErrorKindExt;
-
-use {Result, ErrorKind};
+use Result;
 use message::RawMessage;
 use attribute::{self, RawAttribute};
 use types::{TryAsRef, U12};
@@ -61,7 +59,7 @@ macro_rules! impl_attr_try_as_ref {
 
 /// Attribute set that are defined in [RFC 5389](https://tools.ietf.org/html/rfc5389).
 #[allow(missing_docs)]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub enum Attribute {
     MappedAddress(attributes::MappedAddress),
     Username(attributes::Username),
@@ -74,6 +72,7 @@ pub enum Attribute {
     Software(attributes::Software),
     AlternateServer(attributes::AlternateServer),
     Fingerprint(attributes::Fingerprint),
+    Other(RawAttribute),
 }
 impl_attr_from!(MappedAddress);
 impl_attr_from!(Username);
@@ -111,6 +110,7 @@ impl ::Attribute for Attribute {
             Attribute::Software(ref a) => a.get_type(),
             Attribute::AlternateServer(ref a) => a.get_type(),
             Attribute::Fingerprint(ref a) => a.get_type(),
+            Attribute::Other(ref a) => a.get_type(),
         }
     }
     fn try_from_raw(attr: &RawAttribute, message: &RawMessage) -> Result<Self> {
@@ -148,7 +148,7 @@ impl ::Attribute for Attribute {
             attributes::TYPE_FINGERPRINT => {
                 attributes::Fingerprint::try_from_raw(attr, message).map(From::from)
             }
-            t => Err(ErrorKind::Unsupported.cause(format!("Unknown attribute: type={}", t))),
+            _ => Ok(Attribute::Other(attr.clone())),
         }
     }
     fn encode_value(&self, message: &RawMessage) -> Result<Vec<u8>> {
@@ -164,6 +164,7 @@ impl ::Attribute for Attribute {
             Attribute::Software(ref a) => a.encode_value(message),
             Attribute::AlternateServer(ref a) => a.encode_value(message),
             Attribute::Fingerprint(ref a) => a.encode_value(message),
+            Attribute::Other(ref a) => a.encode_value(message),
         }
     }
 }

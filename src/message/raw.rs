@@ -170,6 +170,16 @@ impl RawMessage {
         &self.attributes
     }
 
+    /// Adds `attribute` to the tail of the attributes of this message.
+    pub fn push_attribute(&mut self, attribute: RawAttribute) {
+        self.attributes.push(attribute);
+    }
+
+    /// Removes an attribute from the tail of the attributes of this message.
+    pub fn pop_attribute(&mut self) -> Option<RawAttribute> {
+        self.attributes.pop()
+    }
+
     /// Converts this message to the corresponding binary format.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::new();
@@ -353,6 +363,9 @@ impl Message for RawMessage {
     }
     fn get_attributes(&self) -> &[Self::Attribute] {
         self.attributes()
+    }
+    fn try_to_raw(&self) -> Result<RawMessage> {
+        Ok(self.clone())
     }
 }
 

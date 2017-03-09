@@ -66,6 +66,7 @@ impl SocketAddrValue {
     /// Applies XOR operation on the socket address of this instance.
     pub fn xor(&self, transaction_id: &TransactionId) -> Self {
         let addr = self.0;
+        let xor_port = addr.port() ^ (constants::MAGIC_COOKIE >> 16) as u16;
         let xor_addr = match addr.ip() {
             IpAddr::V4(ip) => {
                 let mut octets = ip.octets();
@@ -73,7 +74,7 @@ impl SocketAddrValue {
                     octets[i] ^= (constants::MAGIC_COOKIE >> (24 - i * 8)) as u8;
                 }
                 let xor_ip = From::from(octets);
-                SocketAddr::new(IpAddr::V4(xor_ip), addr.port())
+                SocketAddr::new(IpAddr::V4(xor_ip), xor_port)
             }
             IpAddr::V6(ip) => {
                 let mut octets = ip.octets();
@@ -84,7 +85,7 @@ impl SocketAddrValue {
                     octets[i] ^= transaction_id[i - 4];
                 }
                 let xor_ip = From::from(octets);
-                SocketAddr::new(IpAddr::V6(xor_ip), addr.port())
+                SocketAddr::new(IpAddr::V6(xor_ip), xor_port)
             }
         };
         Self::new(xor_addr)

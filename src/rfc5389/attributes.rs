@@ -1,14 +1,19 @@
 //! Individual Definition of the attributes that are defined in [RFC 5389]
 //! (https://tools.ietf.org/html/rfc5389).
+use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::io::{Write, Cursor};
 use std::net::SocketAddr;
 use crc::crc32;
+use md5;
+use hmacsha1;
 use handy_async::sync_io::{ReadExt, WriteExt};
 
 use {Result, Attribute, ErrorKind};
-use message::RawMessage;
+use message::{RawMessage, Message};
 use attribute::{Type, RawAttribute};
-use types::SocketAddrValue;
+use types::{SocketAddrValue, TryAsRef};
+use rfc5389::errors;
 
 /// The codepoint of the [MappedAddress](struct.MappedAddress.html) attribute.
 pub const TYPE_MAPPED_ADDRESS: u16 = 0x0001;
@@ -160,7 +165,6 @@ impl Attribute for Username {
     }
 }
 
-
 /// `MESSAGE-INTEGRITY` attribute.
 ///
 /// See [RFC 5389 -- 15.3. MESSAGE-INTEGRITY]
@@ -168,37 +172,131 @@ impl Attribute for Username {
 ///
 /// # TODO
 ///
-/// - Check integrity
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// - Support SASLprep
+///
+#[derive(Clone)]
 pub struct MessageIntegrity {
     hmac_sha1: [u8; 20],
+    preceding: RawMessage,
 }
 impl MessageIntegrity {
-    /// Makes a new `MessageIntegrity` instance.
-    pub fn new(hmac_sha1: [u8; 20]) -> Self {
-        MessageIntegrity { hmac_sha1: hmac_sha1 }
+    /// Makes a new `MessageIntegrity` instance for short-term credentials.
+    pub fn new_short_term_credential<M>(message: &M, password: &str) -> Result<Self>
+        where M: Message
+    {
+        let key = password.as_bytes();
+        let preceding = track_try!(message.try_to_raw());
+        let hmac = Self::calc_hmac_sha1(key, &preceding);
+        Ok(MessageIntegrity {
+            hmac_sha1: hmac,
+            preceding: preceding,
+        })
+    }
+
+    /// Makes a new `MessageIntegrity` instance for long-term credentials.
+    pub fn new_long_term_credential<M>(message: &M, password: &str) -> Result<Self>
+        where M: Message,
+              M::Attribute: TryAsRef<Username> + TryAsRef<Realm>
+    {
+        let username = track_try!(message.get_attribute::<Username>()
+            .ok_or_else(|| ErrorKind::ErrorCode(errors::BadRequest.into())));
+        let realm = track_try!(message.get_attribute::<Realm>()
+            .ok_or_else(|| ErrorKind::ErrorCode(errors::BadRequest.into())));
+        let key = md5::compute(format!("{}:{}:{}", username.name(), realm.text(), password)
+            .as_bytes());
+        let preceding = track_try!(message.try_to_raw());
+        let hmac = Self::calc_hmac_sha1(&key.0[..], &preceding);
+        Ok(MessageIntegrity {
+            hmac_sha1: hmac,
+            preceding: preceding,
+        })
+    }
+
+    /// Checks whether this has the valid short-term credential for `password`.
+    pub fn check_short_term_credential(&self, password: &str) -> Result<()> {
+        let key = password.as_bytes();
+        let expected = Self::calc_hmac_sha1(key, &self.preceding);
+        track_assert_eq!(self.hmac_sha1,
+                         expected,
+                         ErrorKind::ErrorCode(errors::Unauthorized.into()));
+        Ok(())
+    }
+
+    /// Checks whether this has the valid long-term credential for `password`.
+    pub fn check_long_term_credential(&self, password: &str) -> Result<()> {
+        let username = if let Some(a) = self.preceding
+            .attributes()
+            .into_iter()
+            .find(|a| a.get_type().as_u16() == TYPE_USERNAME) {
+            track_try!(Username::try_from_raw(a, &self.preceding))
+        } else {
+            track_panic!(ErrorKind::ErrorCode(errors::BadRequest.into()));
+        };
+        let realm = if let Some(a) = self.preceding
+            .attributes()
+            .into_iter()
+            .find(|a| a.get_type().as_u16() == TYPE_REALM) {
+            track_try!(Realm::try_from_raw(a, &self.preceding))
+        } else {
+            track_panic!(ErrorKind::ErrorCode(errors::BadRequest.into()));
+        };
+        let key = md5::compute(format!("{}:{}:{}", username.name(), realm.text(), password)
+            .as_bytes());
+        let expected = Self::calc_hmac_sha1(&key.0[..], &self.preceding);
+        track_assert_eq!(self.hmac_sha1,
+                         expected,
+                         ErrorKind::ErrorCode(errors::Unauthorized.into()));
+        Ok(())
     }
 
     /// Returns the HMAC-SHA1 of this instance.
     pub fn hmac_sha1(&self) -> [u8; 20] {
         self.hmac_sha1
     }
+
+    fn calc_hmac_sha1(key: &[u8], preceding: &RawMessage) -> [u8; 20] {
+        let mut bytes = preceding.to_bytes();
+        let adjusted_len = bytes.len() - 20 /*msg header*/+ 4 /*attr header*/ + 20 /*hmac*/;
+        (&mut bytes[2..4]).write_u16be(adjusted_len as u16).expect("must succeed");
+        hmacsha1::hmac_sha1(key, &bytes[..])
+    }
 }
 impl Attribute for MessageIntegrity {
     fn get_type(&self) -> Type {
         Type::new(TYPE_MESSAGE_INTEGRITY)
     }
-    fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
+    fn try_from_raw(attr: &RawAttribute, message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(),
                          TYPE_MESSAGE_INTEGRITY,
                          ErrorKind::Unsupported);
         track_assert_eq!(attr.value().len(), 20, ErrorKind::Invalid);
         let mut hmac_sha1 = [0; 20];
         (&mut hmac_sha1[..]).copy_from_slice(attr.value());
-        Ok(Self::new(hmac_sha1))
+        Ok(MessageIntegrity {
+            hmac_sha1: hmac_sha1,
+            preceding: message.clone(),
+        })
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
         Ok(Vec::from(&self.hmac_sha1[..]))
+    }
+}
+impl Hash for MessageIntegrity {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.hmac_sha1.hash(hasher);
+    }
+}
+impl PartialEq for MessageIntegrity {
+    fn eq(&self, other: &Self) -> bool {
+        self.hmac_sha1 == other.hmac_sha1
+    }
+}
+impl Eq for MessageIntegrity {}
+impl fmt::Debug for MessageIntegrity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+               "MessageIntegrity {{ hmac_sha1: {:?}, .. }}",
+               self.hmac_sha1)
     }
 }
 
@@ -458,99 +556,6 @@ impl Attribute for Fingerprint {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use message::RawMessage;
-    use super::*;
-
-    #[test]
-    fn rfc5769_2_1_sample_request() {
-        let input = [0x00, 0x01, 0x00, 0x58, 0x21, 0x12, 0xa4, 0x42, 0xb7, 0xe7, 0xa7, 0x01, 0xbc,
-                     0x34, 0xd6, 0x86, 0xfa, 0x87, 0xdf, 0xae, 0x80, 0x22, 0x00, 0x10, 0x53, 0x54,
-                     0x55, 0x4e, 0x20, 0x74, 0x65, 0x73, 0x74, 0x20, 0x63, 0x6c, 0x69, 0x65, 0x6e,
-                     0x74, 0x00, 0x24, 0x00, 0x04, 0x6e, 0x00, 0x01, 0xff, 0x80, 0x29, 0x00, 0x08,
-                     0x93, 0x2f, 0xf9, 0xb1, 0x51, 0x26, 0x3b, 0x36, 0x00, 0x06, 0x00, 0x09, 0x65,
-                     0x76, 0x74, 0x6a, 0x3a, 0x68, 0x36, 0x76, 0x59, 0x20, 0x20, 0x20, 0x00, 0x08,
-                     0x00, 0x14, 0x9a, 0xea, 0xa7, 0x0c, 0xbf, 0xd8, 0xcb, 0x56, 0x78, 0x1e, 0xf2,
-                     0xb5, 0xb2, 0xd3, 0xf2, 0x49, 0xc1, 0xb5, 0x71, 0xa2, 0x80, 0x28, 0x00, 0x04,
-                     0xe5, 0x7a, 0x3b, 0xcf];
-        let message = RawMessage::read_from(&mut &input[..]).unwrap();
-        let mut attributes = Vec::from(message.attributes());
-
-        // TEST: `Fingerprint`
-        attributes.pop(); // Removes `Fingerprint` attribute
-        let message = RawMessage::new(message.class(),
-                                      message.method(),
-                                      message.transaction_id().clone(),
-                                      attributes);
-        let fingerprint = Fingerprint::from_message(&message);
-        assert_eq!(fingerprint.crc32(), 0xe57a3bcf);
-
-        // // TEST: `MessageIntegrity`
-        // attributes.pop(); // Removes `MessageIntegrity` attribute
-    }
-
-    #[test]
-    fn rfc5769_2_2_sample_ipv4_response() {
-        let input = [0x01, 0x01, 0x00, 0x3c, 0x21, 0x12, 0xa4, 0x42, 0xb7, 0xe7, 0xa7, 0x01, 0xbc,
-                     0x34, 0xd6, 0x86, 0xfa, 0x87, 0xdf, 0xae, 0x80, 0x22, 0x00, 0x0b, 0x74, 0x65,
-                     0x73, 0x74, 0x20, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x20, 0x00, 0x20, 0x00,
-                     0x08, 0x00, 0x01, 0xa1, 0x47, 0xe1, 0x12, 0xa6, 0x43, 0x00, 0x08, 0x00, 0x14,
-                     0x2b, 0x91, 0xf5, 0x99, 0xfd, 0x9e, 0x90, 0xc3, 0x8c, 0x74, 0x89, 0xf9, 0x2a,
-                     0xf9, 0xba, 0x53, 0xf0, 0x6b, 0xe7, 0xd7, 0x80, 0x28, 0x00, 0x04, 0xc0, 0x7d,
-                     0x4c, 0x96];
-        let message = RawMessage::read_from(&mut &input[..]).unwrap();
-        let mut attributes = Vec::from(message.attributes());
-
-        // TEST: `Fingerprint`
-        attributes.pop(); // Removes `Fingerprint` attribute
-        let message = RawMessage::new(message.class(),
-                                      message.method(),
-                                      message.transaction_id().clone(),
-                                      attributes);
-        let fingerprint = Fingerprint::from_message(&message);
-        assert_eq!(fingerprint.crc32(), 0xc07d4c96);
-    }
-
-    #[test]
-    fn rfc5769_2_3_sample_ipv6_response() {
-        let input = [0x01, 0x01, 0x00, 0x48, 0x21, 0x12, 0xa4, 0x42, 0xb7, 0xe7, 0xa7, 0x01, 0xbc,
-                     0x34, 0xd6, 0x86, 0xfa, 0x87, 0xdf, 0xae, 0x80, 0x22, 0x00, 0x0b, 0x74, 0x65,
-                     0x73, 0x74, 0x20, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x20, 0x00, 0x20, 0x00,
-                     0x14, 0x00, 0x02, 0xa1, 0x47, 0x01, 0x13, 0xa9, 0xfa, 0xa5, 0xd3, 0xf1, 0x79,
-                     0xbc, 0x25, 0xf4, 0xb5, 0xbe, 0xd2, 0xb9, 0xd9, 0x00, 0x08, 0x00, 0x14, 0xa3,
-                     0x82, 0x95, 0x4e, 0x4b, 0xe6, 0x7b, 0xf1, 0x17, 0x84, 0xc9, 0x7c, 0x82, 0x92,
-                     0xc2, 0x75, 0xbf, 0xe3, 0xed, 0x41, 0x80, 0x28, 0x00, 0x04, 0xc8, 0xfb, 0x0b,
-                     0x4c];
-        let message = RawMessage::read_from(&mut &input[..]).unwrap();
-        let mut attributes = Vec::from(message.attributes());
-
-        // TEST: `Fingerprint`
-        attributes.pop(); // Removes `Fingerprint` attribute
-        let message = RawMessage::new(message.class(),
-                                      message.method(),
-                                      message.transaction_id().clone(),
-                                      attributes);
-        let fingerprint = Fingerprint::from_message(&message);
-        assert_eq!(fingerprint.crc32(), 0xc8fb0b4c);
-    }
-
-    #[test]
-    fn rfc5769_2_4_sample_request_with_long_term_authentication() {
-        let input = [0x00, 0x01, 0x00, 0x60, 0x21, 0x12, 0xa4, 0x42, 0x78, 0xad, 0x34, 0x33, 0xc6,
-                     0xad, 0x72, 0xc0, 0x29, 0xda, 0x41, 0x2e, 0x00, 0x06, 0x00, 0x12, 0xe3, 0x83,
-                     0x9e, 0xe3, 0x83, 0x88, 0xe3, 0x83, 0xaa, 0xe3, 0x83, 0x83, 0xe3, 0x82, 0xaf,
-                     0xe3, 0x82, 0xb9, 0x00, 0x00, 0x00, 0x15, 0x00, 0x1c, 0x66, 0x2f, 0x2f, 0x34,
-                     0x39, 0x39, 0x6b, 0x39, 0x35, 0x34, 0x64, 0x36, 0x4f, 0x4c, 0x33, 0x34, 0x6f,
-                     0x4c, 0x39, 0x46, 0x53, 0x54, 0x76, 0x79, 0x36, 0x34, 0x73, 0x41, 0x00, 0x14,
-                     0x00, 0x0b, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x6f, 0x72, 0x67,
-                     0x00, 0x00, 0x08, 0x00, 0x14, 0xf6, 0x70, 0x24, 0x65, 0x6d, 0xd6, 0x4a, 0x3e,
-                     0x02, 0xb8, 0xe0, 0x71, 0x2e, 0x85, 0xc9, 0xa2, 0x8c, 0xa8, 0x96, 0x66];
-        let _message = RawMessage::read_from(&mut &input[..]).unwrap();
-        //let mut attributes = Vec::from(message.attributes());
-    }
-}
-
 /// `SOFTWARE` attribute.
 ///
 /// See [RFC 5389 -- 15.10. SOFTWARE]
@@ -630,5 +635,123 @@ impl Attribute for XorMappedAddress {
         let mut buf = Vec::new();
         track_try!(xor_addr.write_to(&mut buf));
         Ok(buf)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use message::{self, RawMessage, Message};
+    use rfc5389::{Method, Attribute};
+    use super::*;
+
+    type Request = message::Request<Method, Attribute>;
+    type Response = message::Response<Method, Attribute>;
+
+    #[test]
+    fn rfc5769_2_1_sample_request() {
+        let input = [0x00, 0x01, 0x00, 0x58, 0x21, 0x12, 0xa4, 0x42, 0xb7, 0xe7, 0xa7, 0x01, 0xbc,
+                     0x34, 0xd6, 0x86, 0xfa, 0x87, 0xdf, 0xae, 0x80, 0x22, 0x00, 0x10, 0x53, 0x54,
+                     0x55, 0x4e, 0x20, 0x74, 0x65, 0x73, 0x74, 0x20, 0x63, 0x6c, 0x69, 0x65, 0x6e,
+                     0x74, 0x00, 0x24, 0x00, 0x04, 0x6e, 0x00, 0x01, 0xff, 0x80, 0x29, 0x00, 0x08,
+                     0x93, 0x2f, 0xf9, 0xb1, 0x51, 0x26, 0x3b, 0x36, 0x00, 0x06, 0x00, 0x09, 0x65,
+                     0x76, 0x74, 0x6a, 0x3a, 0x68, 0x36, 0x76, 0x59, 0x20, 0x20, 0x20, 0x00, 0x08,
+                     0x00, 0x14, 0x9a, 0xea, 0xa7, 0x0c, 0xbf, 0xd8, 0xcb, 0x56, 0x78, 0x1e, 0xf2,
+                     0xb5, 0xb2, 0xd3, 0xf2, 0x49, 0xc1, 0xb5, 0x71, 0xa2, 0x80, 0x28, 0x00, 0x04,
+                     0xe5, 0x7a, 0x3b, 0xcf];
+        let mut message = RawMessage::read_from(&mut &input[..]).unwrap();
+
+        // TEST: `MessageIntegrity`
+        let request: Request = message.clone().try_into_request().unwrap();
+        let password = "VOkJxbRl1RmTxUk/WvJxBt";
+        request.get_attribute::<MessageIntegrity>()
+            .unwrap()
+            .check_short_term_credential(password)
+            .unwrap();
+
+        // TEST: `Fingerprint`
+        message.pop_attribute(); // Removes `Fingerprint` attribute
+        let fingerprint = Fingerprint::from_message(&message);
+        assert_eq!(fingerprint.crc32(), 0xe57a3bcf);
+    }
+
+    #[test]
+    fn rfc5769_2_2_sample_ipv4_response() {
+        let input = [0x01, 0x01, 0x00, 0x3c, 0x21, 0x12, 0xa4, 0x42, 0xb7, 0xe7, 0xa7, 0x01, 0xbc,
+                     0x34, 0xd6, 0x86, 0xfa, 0x87, 0xdf, 0xae, 0x80, 0x22, 0x00, 0x0b, 0x74, 0x65,
+                     0x73, 0x74, 0x20, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x20, 0x00, 0x20, 0x00,
+                     0x08, 0x00, 0x01, 0xa1, 0x47, 0xe1, 0x12, 0xa6, 0x43, 0x00, 0x08, 0x00, 0x14,
+                     0x2b, 0x91, 0xf5, 0x99, 0xfd, 0x9e, 0x90, 0xc3, 0x8c, 0x74, 0x89, 0xf9, 0x2a,
+                     0xf9, 0xba, 0x53, 0xf0, 0x6b, 0xe7, 0xd7, 0x80, 0x28, 0x00, 0x04, 0xc0, 0x7d,
+                     0x4c, 0x96];
+        let mut message = RawMessage::read_from(&mut &input[..]).unwrap();
+
+        // TEST: `MessageIntegrity`
+        let response: Response = message.clone().try_into_response().unwrap();
+        let password = "VOkJxbRl1RmTxUk/WvJxBt";
+        response.get_attribute::<MessageIntegrity>()
+            .unwrap()
+            .check_short_term_credential(password)
+            .unwrap();
+
+        // TEST: `XorMappedAddress` (IPv4)
+        assert_eq!(response.get_attribute::<XorMappedAddress>().unwrap().address(),
+                   "192.0.2.1:32853".parse().unwrap());
+
+        // TEST: `Fingerprint`
+        message.pop_attribute(); // Removes `Fingerprint` attribute
+        let fingerprint = Fingerprint::from_message(&message);
+        assert_eq!(fingerprint.crc32(), 0xc07d4c96);
+    }
+
+    #[test]
+    fn rfc5769_2_3_sample_ipv6_response() {
+        let input = [0x01, 0x01, 0x00, 0x48, 0x21, 0x12, 0xa4, 0x42, 0xb7, 0xe7, 0xa7, 0x01, 0xbc,
+                     0x34, 0xd6, 0x86, 0xfa, 0x87, 0xdf, 0xae, 0x80, 0x22, 0x00, 0x0b, 0x74, 0x65,
+                     0x73, 0x74, 0x20, 0x76, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x20, 0x00, 0x20, 0x00,
+                     0x14, 0x00, 0x02, 0xa1, 0x47, 0x01, 0x13, 0xa9, 0xfa, 0xa5, 0xd3, 0xf1, 0x79,
+                     0xbc, 0x25, 0xf4, 0xb5, 0xbe, 0xd2, 0xb9, 0xd9, 0x00, 0x08, 0x00, 0x14, 0xa3,
+                     0x82, 0x95, 0x4e, 0x4b, 0xe6, 0x7b, 0xf1, 0x17, 0x84, 0xc9, 0x7c, 0x82, 0x92,
+                     0xc2, 0x75, 0xbf, 0xe3, 0xed, 0x41, 0x80, 0x28, 0x00, 0x04, 0xc8, 0xfb, 0x0b,
+                     0x4c];
+        let mut message = RawMessage::read_from(&mut &input[..]).unwrap();
+
+        // TEST: `MessageIntegrity`
+        let response: Response = message.clone().try_into_response().unwrap();
+        let password = "VOkJxbRl1RmTxUk/WvJxBt";
+        response.get_attribute::<MessageIntegrity>()
+            .unwrap()
+            .check_short_term_credential(password)
+            .unwrap();
+
+        // TEST: `XorMappedAddress` (IPv6)
+        assert_eq!(response.get_attribute::<XorMappedAddress>().unwrap().address(),
+                   "[2001:db8:1234:5678:11:2233:4455:6677]:32853".parse().unwrap());
+
+        // TEST: `Fingerprint`
+        message.pop_attribute(); // Removes `Fingerprint` attribute
+        let fingerprint = Fingerprint::from_message(&message);
+        assert_eq!(fingerprint.crc32(), 0xc8fb0b4c);
+    }
+
+    #[test]
+    fn rfc5769_2_4_sample_request_with_long_term_authentication() {
+        let input = [0x00, 0x01, 0x00, 0x60, 0x21, 0x12, 0xa4, 0x42, 0x78, 0xad, 0x34, 0x33, 0xc6,
+                     0xad, 0x72, 0xc0, 0x29, 0xda, 0x41, 0x2e, 0x00, 0x06, 0x00, 0x12, 0xe3, 0x83,
+                     0x9e, 0xe3, 0x83, 0x88, 0xe3, 0x83, 0xaa, 0xe3, 0x83, 0x83, 0xe3, 0x82, 0xaf,
+                     0xe3, 0x82, 0xb9, 0x00, 0x00, 0x00, 0x15, 0x00, 0x1c, 0x66, 0x2f, 0x2f, 0x34,
+                     0x39, 0x39, 0x6b, 0x39, 0x35, 0x34, 0x64, 0x36, 0x4f, 0x4c, 0x33, 0x34, 0x6f,
+                     0x4c, 0x39, 0x46, 0x53, 0x54, 0x76, 0x79, 0x36, 0x34, 0x73, 0x41, 0x00, 0x14,
+                     0x00, 0x0b, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x6f, 0x72, 0x67,
+                     0x00, 0x00, 0x08, 0x00, 0x14, 0xf6, 0x70, 0x24, 0x65, 0x6d, 0xd6, 0x4a, 0x3e,
+                     0x02, 0xb8, 0xe0, 0x71, 0x2e, 0x85, 0xc9, 0xa2, 0x8c, 0xa8, 0x96, 0x66];
+        let message = RawMessage::read_from(&mut &input[..]).unwrap();
+
+        // TEST: `MessageIntegrity`
+        let request: Request = message.clone().try_into_request().unwrap();
+        let password = "TheMatrIX"; // TODO: Test before SASLprep version
+        request.get_attribute::<MessageIntegrity>()
+            .unwrap()
+            .check_long_term_credential(password)
+            .unwrap();
     }
 }

@@ -24,10 +24,11 @@
 //! > [RFC 5389 -- 3. Overview of Operation](https://tools.ietf.org/html/rfc5389#section-3)
 use rand;
 
-use {Method, Attribute};
+use {Method, Attribute, Error};
 use types::TransactionId;
 use method::{Requestable, Indicatable};
 use rfc5389::attributes::ErrorCode;
+use types::TryAsRef;
 
 pub use self::raw::{RawMessage, Class};
 
@@ -52,6 +53,27 @@ pub trait Message {
 
     /// Returns the attributes of this message.
     fn get_attributes(&self) -> &[Self::Attribute];
+
+    /// Returns the reference to the specified attribute
+    /// if it exists in the attributes of this method.
+    fn get_attribute<A>(&self) -> Option<&A>
+        where Self::Attribute: TryAsRef<A>
+    {
+        self.get_attributes().iter().filter_map(|a| a.try_as_ref()).nth(0)
+    }
+
+    /// Tries to convert to `RawMessage`.
+    fn try_to_raw(&self) -> Result<RawMessage, Error> {
+        let mut raw = RawMessage::new(self.get_class(),
+                                      self.get_method().as_u12(),
+                                      self.get_transaction_id().clone(),
+                                      Vec::new());
+        for attr in self.get_attributes() {
+            let raw_attr = track_try!(attr.try_to_raw(&raw));
+            raw.push_attribute(raw_attr);
+        }
+        Ok(raw)
+    }
 }
 
 /// Response message.
