@@ -4,7 +4,7 @@ use trackable::error::ErrorKindExt;
 use {Result, ErrorKind};
 use message::RawMessage;
 use attribute::{self, RawAttribute};
-use types::U12;
+use types::{TryAsRef, U12};
 
 pub mod methods;
 pub mod attributes;
@@ -45,6 +45,19 @@ macro_rules! impl_attr_from {
         }
     }
 }
+macro_rules! impl_attr_try_as_ref {
+    ($attr:ident) => {
+        impl TryAsRef<attributes::$attr> for Attribute {
+            fn try_as_ref(&self) -> Option<&attributes::$attr> {
+                if let Attribute::$attr(ref a) = *self {
+                    Some(a)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
 
 /// Attribute set that are defined in [RFC 5389](https://tools.ietf.org/html/rfc5389).
 #[allow(missing_docs)]
@@ -73,6 +86,17 @@ impl_attr_from!(XorMappedAddress);
 impl_attr_from!(Software);
 impl_attr_from!(AlternateServer);
 impl_attr_from!(Fingerprint);
+impl_attr_try_as_ref!(MappedAddress);
+impl_attr_try_as_ref!(Username);
+impl_attr_try_as_ref!(MessageIntegrity);
+impl_attr_try_as_ref!(ErrorCode);
+impl_attr_try_as_ref!(UnknownAttributes);
+impl_attr_try_as_ref!(Realm);
+impl_attr_try_as_ref!(Nonce);
+impl_attr_try_as_ref!(XorMappedAddress);
+impl_attr_try_as_ref!(Software);
+impl_attr_try_as_ref!(AlternateServer);
+impl_attr_try_as_ref!(Fingerprint);
 impl ::Attribute for Attribute {
     fn get_type(&self) -> attribute::Type {
         match *self {

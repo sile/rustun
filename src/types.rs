@@ -132,3 +132,10 @@ impl SocketAddrValue {
         Ok(())
     }
 }
+
+
+/// An attempted cheap reference-to-reference conversion.
+pub trait TryAsRef<T> {
+    /// Performs the conversion.
+    fn try_as_ref(&self) -> Option<&T>;
+}
