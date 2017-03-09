@@ -6,7 +6,7 @@ use trackable::error::ErrorKindExt;
 use {Result, Method, Attribute, ErrorKind};
 use types::{U12, TransactionId};
 use attribute::RawAttribute;
-use message::{Request, Indication, SuccessResponse, ErrorResponse, Response};
+use message::{Request, Indication, SuccessResponse, ErrorResponse, Response, Message};
 use constants::MAGIC_COOKIE;
 
 /// The raw representation of a STUN message.
@@ -337,6 +337,22 @@ impl RawMessage {
             self.attributes.push(a);
         }
         Ok((method, self.transaction_id, dst_attrs))
+    }
+}
+impl Message for RawMessage {
+    type Method = U12;
+    type Attribute = RawAttribute;
+    fn get_class(&self) -> Class {
+        self.class()
+    }
+    fn get_method(&self) -> &Self::Method {
+        &self.method
+    }
+    fn get_transaction_id(&self) -> &TransactionId {
+        self.transaction_id()
+    }
+    fn get_attributes(&self) -> &[Self::Attribute] {
+        self.attributes()
     }
 }
 

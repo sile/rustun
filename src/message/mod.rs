@@ -33,8 +33,45 @@ pub use self::raw::{RawMessage, Class};
 
 mod raw;
 
+/// STUN message.
+pub trait Message {
+    /// STUN method type of this implementation.
+    type Method: Method;
+
+    /// STUN attribute type of this implementation.
+    type Attribute: Attribute;
+
+    /// Returns the class of this message.
+    fn get_class(&self) -> Class;
+
+    /// Returns the method of this message.
+    fn get_method(&self) -> &Self::Method;
+
+    /// Returns the transaction ID of this message.
+    fn get_transaction_id(&self) -> &TransactionId;
+
+    /// Returns the attributes of this message.
+    fn get_attributes(&self) -> &[Self::Attribute];
+}
+
 /// Response message.
 pub type Response<M, A> = Result<SuccessResponse<M, A>, ErrorResponse<M, A>>;
+impl<M: Method, A: Attribute> Message for Response<M, A> {
+    type Method = M;
+    type Attribute = A;
+    fn get_class(&self) -> Class {
+        self.as_ref().map(|r| r.get_class()).unwrap_or_else(|r| r.get_class())
+    }
+    fn get_method(&self) -> &Self::Method {
+        self.as_ref().map(|r| r.get_method()).unwrap_or_else(|r| r.get_method())
+    }
+    fn get_transaction_id(&self) -> &TransactionId {
+        self.as_ref().map(|r| r.get_transaction_id()).unwrap_or_else(|r| r.get_transaction_id())
+    }
+    fn get_attributes(&self) -> &[Self::Attribute] {
+        self.as_ref().map(|r| r.get_attributes()).unwrap_or_else(|r| r.get_attributes())
+    }
+}
 
 /// Request message.
 #[derive(Debug, Clone)]
@@ -95,6 +132,22 @@ impl<M, A> Request<M, A>
         ErrorResponse::new(self.method, self.transaction_id)
     }
 }
+impl<M: Method, A: Attribute> Message for Request<M, A> {
+    type Method = M;
+    type Attribute = A;
+    fn get_class(&self) -> Class {
+        Class::Request
+    }
+    fn get_method(&self) -> &Self::Method {
+        self.method()
+    }
+    fn get_transaction_id(&self) -> &TransactionId {
+        self.transaction_id()
+    }
+    fn get_attributes(&self) -> &[Self::Attribute] {
+        self.attributes()
+    }
+}
 
 /// Indication message.
 #[derive(Debug, Clone)]
@@ -145,6 +198,22 @@ impl<M, A> Indication<M, A>
         &self.attributes
     }
 }
+impl<M: Method, A: Attribute> Message for Indication<M, A> {
+    type Method = M;
+    type Attribute = A;
+    fn get_class(&self) -> Class {
+        Class::Request
+    }
+    fn get_method(&self) -> &Self::Method {
+        self.method()
+    }
+    fn get_transaction_id(&self) -> &TransactionId {
+        self.transaction_id()
+    }
+    fn get_attributes(&self) -> &[Self::Attribute] {
+        self.attributes()
+    }
+}
 
 /// Success response message.
 ///
@@ -192,6 +261,22 @@ impl<M, A> SuccessResponse<M, A>
     /// Returns the attributes of this message.
     pub fn attributes(&self) -> &[A] {
         &self.attributes
+    }
+}
+impl<M: Method, A: Attribute> Message for SuccessResponse<M, A> {
+    type Method = M;
+    type Attribute = A;
+    fn get_class(&self) -> Class {
+        Class::Request
+    }
+    fn get_method(&self) -> &Self::Method {
+        self.method()
+    }
+    fn get_transaction_id(&self) -> &TransactionId {
+        self.transaction_id()
+    }
+    fn get_attributes(&self) -> &[Self::Attribute] {
+        self.attributes()
     }
 }
 
@@ -248,5 +333,21 @@ impl<M, A> ErrorResponse<M, A>
     /// Returns the attributes of this message.
     pub fn attributes(&self) -> &[A] {
         &self.attributes
+    }
+}
+impl<M: Method, A: Attribute> Message for ErrorResponse<M, A> {
+    type Method = M;
+    type Attribute = A;
+    fn get_class(&self) -> Class {
+        Class::Request
+    }
+    fn get_method(&self) -> &Self::Method {
+        self.method()
+    }
+    fn get_transaction_id(&self) -> &TransactionId {
+        self.transaction_id()
+    }
+    fn get_attributes(&self) -> &[Self::Attribute] {
+        self.attributes()
     }
 }
