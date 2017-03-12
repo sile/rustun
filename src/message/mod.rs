@@ -224,7 +224,7 @@ impl<M: Method, A: Attribute> Message for Indication<M, A> {
     type Method = M;
     type Attribute = A;
     fn get_class(&self) -> Class {
-        Class::Request
+        Class::Indication
     }
     fn get_method(&self) -> &Self::Method {
         self.method()
@@ -289,7 +289,7 @@ impl<M: Method, A: Attribute> Message for SuccessResponse<M, A> {
     type Method = M;
     type Attribute = A;
     fn get_class(&self) -> Class {
-        Class::Request
+        Class::SuccessResponse
     }
     fn get_method(&self) -> &Self::Method {
         self.method()
@@ -361,7 +361,7 @@ impl<M: Method, A: Attribute> Message for ErrorResponse<M, A> {
     type Method = M;
     type Attribute = A;
     fn get_class(&self) -> Class {
-        Class::Request
+        Class::ErrorResponse
     }
     fn get_method(&self) -> &Self::Method {
         self.method()
