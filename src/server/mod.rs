@@ -37,12 +37,14 @@ pub trait HandleMessage {
     /// Handles the request/response transaction issued by `client`.
     fn handle_call(&mut self,
                    client: SocketAddr,
+                   server: SocketAddr,
                    message: Request<Self::Method, Self::Attribute>)
                    -> Self::HandleCall;
 
     /// Handles the indication transaction issued by `client`.
     fn handle_cast(&mut self,
                    client: SocketAddr,
+                   server: SocketAddr,
                    message: Indication<Self::Method, Self::Attribute>)
                    -> Self::HandleCast;
 

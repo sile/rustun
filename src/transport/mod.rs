@@ -29,7 +29,7 @@ pub trait MessageSink: Sink<SinkItem = MessageSinkItem, SinkError = Error> {}
 /// A marker trait representing that the implementation can be used as
 /// the receiving side of message transport layer.
 pub trait MessageStream
-    : Stream<Item = (SocketAddr, Result<RawMessage>), Error = Error> {
+    : Stream<Item = (SocketAddr, SocketAddr, Result<RawMessage>), Error = Error> {
 }
 
 /// A marker trait representing that the implementation can be used as message transport layer.
