@@ -12,7 +12,7 @@ use handy_async::sync_io::{ReadExt, WriteExt};
 use {Result, Attribute, ErrorKind};
 use message::{RawMessage, Message};
 use attribute::{Type, RawAttribute};
-use types::{SocketAddrValue, TryAsRef};
+use types::SocketAddrValue;
 use rfc5389::errors;
 
 /// The codepoint of the [MappedAddress](struct.MappedAddress.html) attribute.
@@ -188,28 +188,27 @@ impl MessageIntegrity {
         let preceding = track_try!(message.try_to_raw());
         let hmac = Self::calc_hmac_sha1(key, &preceding);
         Ok(MessageIntegrity {
-            hmac_sha1: hmac,
-            preceding: preceding,
-        })
+               hmac_sha1: hmac,
+               preceding: preceding,
+           })
     }
 
     /// Makes a new `MessageIntegrity` instance for long-term credentials.
-    pub fn new_long_term_credential<M>(message: &M, password: &str) -> Result<Self>
-        where M: Message,
-              M::Attribute: TryAsRef<Username> + TryAsRef<Realm>
+    pub fn new_long_term_credential<M>(message: &M,
+                                       username: &Username,
+                                       realm: &Realm,
+                                       password: &str)
+                                       -> Result<Self>
+        where M: Message
     {
-        let username = track_try!(message.get_attribute::<Username>()
-            .ok_or_else(|| ErrorKind::ErrorCode(errors::BadRequest.into())));
-        let realm = track_try!(message.get_attribute::<Realm>()
-            .ok_or_else(|| ErrorKind::ErrorCode(errors::BadRequest.into())));
         let key = md5::compute(format!("{}:{}:{}", username.name(), realm.text(), password)
-            .as_bytes());
+                                   .as_bytes());
         let preceding = track_try!(message.try_to_raw());
         let hmac = Self::calc_hmac_sha1(&key.0[..], &preceding);
         Ok(MessageIntegrity {
-            hmac_sha1: hmac,
-            preceding: preceding,
-        })
+               hmac_sha1: hmac,
+               preceding: preceding,
+           })
     }
 
     /// Checks whether this has the valid short-term credential for `password`.
@@ -223,25 +222,13 @@ impl MessageIntegrity {
     }
 
     /// Checks whether this has the valid long-term credential for `password`.
-    pub fn check_long_term_credential(&self, password: &str) -> Result<()> {
-        let username = if let Some(a) = self.preceding
-            .attributes()
-            .into_iter()
-            .find(|a| a.get_type().as_u16() == TYPE_USERNAME) {
-            track_try!(Username::try_from_raw(a, &self.preceding))
-        } else {
-            track_panic!(ErrorKind::ErrorCode(errors::BadRequest.into()));
-        };
-        let realm = if let Some(a) = self.preceding
-            .attributes()
-            .into_iter()
-            .find(|a| a.get_type().as_u16() == TYPE_REALM) {
-            track_try!(Realm::try_from_raw(a, &self.preceding))
-        } else {
-            track_panic!(ErrorKind::ErrorCode(errors::BadRequest.into()));
-        };
+    pub fn check_long_term_credential(&self,
+                                      username: &Username,
+                                      realm: &Realm,
+                                      password: &str)
+                                      -> Result<()> {
         let key = md5::compute(format!("{}:{}:{}", username.name(), realm.text(), password)
-            .as_bytes());
+                                   .as_bytes());
         let expected = Self::calc_hmac_sha1(&key.0[..], &self.preceding);
         track_assert_eq!(self.hmac_sha1,
                          expected,
@@ -273,9 +260,9 @@ impl Attribute for MessageIntegrity {
         let mut hmac_sha1 = [0; 20];
         (&mut hmac_sha1[..]).copy_from_slice(attr.value());
         Ok(MessageIntegrity {
-            hmac_sha1: hmac_sha1,
-            preceding: message.clone(),
-        })
+               hmac_sha1: hmac_sha1,
+               preceding: message.clone(),
+           })
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
         Ok(Vec::from(&self.hmac_sha1[..]))
@@ -317,9 +304,9 @@ impl ErrorCode {
     pub fn new(code: u16, reason_phrase: String) -> Option<Self> {
         if 300 <= code && code < 600 {
             Some(ErrorCode {
-                code: code,
-                reason_phrase: reason_phrase,
-            })
+                     code: code,
+                     reason_phrase: reason_phrase,
+                 })
         } else {
             None
         }
@@ -748,10 +735,12 @@ mod test {
 
         // TEST: `MessageIntegrity`
         let request: Request = message.clone().try_into_request().unwrap();
+        let uesrname = request.get_attribute::<Username>().unwrap();
+        let realm = request.get_attribute::<Realm>().unwrap();
         let password = "TheMatrIX"; // TODO: Test before SASLprep version
         request.get_attribute::<MessageIntegrity>()
             .unwrap()
-            .check_long_term_credential(password)
+            .check_long_term_credential(&uesrname, &realm, password)
             .unwrap();
     }
 }
