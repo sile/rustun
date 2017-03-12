@@ -1,3 +1,4 @@
+use std::ops::{Deref, DerefMut};
 use std::net::SocketAddr;
 use fibers::Spawn;
 
@@ -9,12 +10,14 @@ use server::futures::BaseServerLoop;
 /// UDP STUN server.
 #[derive(Debug)]
 pub struct UdpServer {
-    bind_addr: SocketAddr,
+    builder: UdpTransportBuilder,
 }
 impl UdpServer {
     /// Makes a new `UdpServer` instance which will bind to `bind_addr`.
     pub fn new(bind_addr: SocketAddr) -> Self {
-        UdpServer { bind_addr: bind_addr }
+        let mut builder = UdpTransportBuilder::new();
+        builder.bind_addr(bind_addr);
+        UdpServer { builder: builder }
     }
 
     /// Starts the UDP server with `handler`.
@@ -22,8 +25,19 @@ impl UdpServer {
         where S: Spawn + Send + 'static,
               H: HandleMessage
     {
-        let transport = UdpTransportBuilder::new().bind_addr(self.bind_addr).finish();
+        let transport = self.builder.finish();
         BaseServer::start(spawner, transport, handler)
+    }
+}
+impl Deref for UdpServer {
+    type Target = UdpTransportBuilder;
+    fn deref(&self) -> &Self::Target {
+        &self.builder
+    }
+}
+impl DerefMut for UdpServer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.builder
     }
 }
 
