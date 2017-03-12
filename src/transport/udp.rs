@@ -161,13 +161,13 @@ impl UdpTransport {
             max_outstanding_transactions: builder.max_outstanding_transactions,
         };
         UdpTransport(UdpTransportInner::Binding {
-            bind: UdpTransportBind {
-                future: UdpSocket::bind(builder.bind_addr),
-                recv_buffer_size: builder.recv_buffer_size,
-                sink_params: sink_params,
-            },
-            queue: VecDeque::new(),
-        })
+                         bind: UdpTransportBind {
+                             future: UdpSocket::bind(builder.bind_addr),
+                             recv_buffer_size: builder.recv_buffer_size,
+                             sink_params: sink_params,
+                         },
+                         queue: VecDeque::new(),
+                     })
     }
     fn poll_bind_complete(&mut self) -> Result<()> {
         let next = match self.0 {
@@ -292,9 +292,10 @@ impl UdpMessageSink {
     fn update_rto_cache_if_needed(&mut self, rto: Duration) {
         if self.rto_cache.as_ref().map_or(true, |c| c.rto < rto) {
             self.rto_cache = Some(RtoCache {
-                rto: rto,
-                expiry_time: SystemTime::now() + self.params.rto_cache_duration,
-            });
+                                      rto: rto,
+                                      expiry_time: SystemTime::now() +
+                                                   self.params.rto_cache_duration,
+                                  });
         }
     }
     fn calc_next_rto(&mut self, class: Class) -> Option<Duration> {
@@ -435,12 +436,18 @@ struct SendItem {
 }
 impl PartialOrd for SendItem {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        other.wait.as_ref().map(|t| &t.0).partial_cmp(&self.wait.as_ref().map(|t| &t.0))
+        other.wait
+            .as_ref()
+            .map(|t| &t.0)
+            .partial_cmp(&self.wait.as_ref().map(|t| &t.0))
     }
 }
 impl Ord for SendItem {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
-        other.wait.as_ref().map(|t| &t.0).cmp(&self.wait.as_ref().map(|t| &t.0))
+        other.wait
+            .as_ref()
+            .map(|t| &t.0)
+            .cmp(&self.wait.as_ref().map(|t| &t.0))
     }
 }
 impl PartialEq for SendItem {

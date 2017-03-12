@@ -128,9 +128,14 @@ impl<T: Transport> Future for BaseClientLoop<T> {
                     Async::NotReady => {}
                     Async::Ready(None) => return track_err!(Err(disconnected())),
                     Async::Ready(Some((peer, message))) => {
-                        // NOTE: Invalid messages are silently discard.
-                        if let Ok(message) = message {
-                            self.handle_message(peer, message);
+                        match message {
+                            Ok(message) => {
+                                self.handle_message(peer, message);
+                            }
+                            Err(e) => {
+                                // TODO: logging
+                                println!("Error(from '{}'): {}", peer, e);
+                            }
                         }
                     }
                 }
