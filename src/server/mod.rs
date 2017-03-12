@@ -1,9 +1,10 @@
 //! STUN server related components.
 use std::net::SocketAddr;
+use fibers::sync::mpsc;
 use futures::Future;
 
-use {Method, Attribute, Error};
-use message::{Indication, Request, Response};
+use {Result, Method, Attribute, Error, ErrorKind};
+use message::{Indication, Request, Response, RawMessage};
 
 pub use self::base::BaseServer;
 pub use self::udp::UdpServer;
@@ -34,6 +35,13 @@ pub trait HandleMessage {
     /// `Future` type for handling indication transactions.
     type HandleCast: Future<Item = (), Error = ()>;
 
+    /// Handler specific information message type.
+    type Info;
+
+    /// Callback method which invoked after the initialization of a server.
+    #[allow(unused_variables)]
+    fn on_init(&mut self, info_tx: mpsc::Sender<Self::Info>, indication_tx: IndicationSender) {}
+
     /// Handles the request/response transaction issued by `client`.
     fn handle_call(&mut self,
                    client: SocketAddr,
@@ -48,4 +56,29 @@ pub trait HandleMessage {
 
     /// Handles the error occurred while processing a transaction issued by `client`.
     fn handle_error(&mut self, client: SocketAddr, error: Error);
+
+    /// Handles the information message.
+    #[allow(unused_variables)]
+    fn handle_info(&mut self, info: Self::Info) {}
+}
+
+/// Indication message sender.
+#[derive(Debug, Clone)]
+pub struct IndicationSender {
+    inner_tx: mpsc::Sender<(SocketAddr, Result<RawMessage>)>,
+}
+impl IndicationSender {
+    fn new(inner_tx: mpsc::Sender<(SocketAddr, Result<RawMessage>)>) -> Self {
+        IndicationSender { inner_tx: inner_tx }
+    }
+
+    /// Sends the indication message to `peer`.
+    pub fn send<M, A>(&self, peer: SocketAddr, indication: Indication<M, A>) -> Result<()>
+        where M: Method,
+              A: Attribute
+    {
+        let message = track_try!(RawMessage::try_from_indication(indication));
+        track_try!(self.inner_tx.send((peer, Ok(message))).map_err(|_| ErrorKind::Other));
+        Ok(())
+    }
 }

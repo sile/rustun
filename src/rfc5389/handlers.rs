@@ -31,6 +31,7 @@ impl HandleMessage for BindingHandler {
     type Attribute = rfc5389::Attribute;
     type HandleCall = BoxFuture<Response<Self::Method, Self::Attribute>, ()>;
     type HandleCast = BoxFuture<(), ()>;
+    type Info = ();
     fn handle_call(&mut self,
                    client: SocketAddr,
                    request: Request<Self::Method, Self::Attribute>)
