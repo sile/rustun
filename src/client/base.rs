@@ -127,7 +127,7 @@ impl<T: Transport> Future for BaseClientLoop<T> {
                 match track_try!(self.transport.poll()) {
                     Async::NotReady => {}
                     Async::Ready(None) => return track_err!(Err(disconnected())),
-                    Async::Ready(Some((peer, _local, message))) => {
+                    Async::Ready(Some((peer, message))) => {
                         // NOTE: Invalid messages are silently discard.
                         if let Ok(message) = message {
                             self.handle_message(peer, message);

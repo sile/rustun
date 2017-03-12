@@ -33,7 +33,6 @@ impl HandleMessage for BindingHandler {
     type HandleCast = BoxFuture<(), ()>;
     fn handle_call(&mut self,
                    client: SocketAddr,
-                   _server: SocketAddr,
                    request: Request<Self::Method, Self::Attribute>)
                    -> Self::HandleCall {
         let mut response = request.into_success_response();
@@ -42,7 +41,6 @@ impl HandleMessage for BindingHandler {
     }
     fn handle_cast(&mut self,
                    _client: SocketAddr,
-                   _server: SocketAddr,
                    _message: Indication<Self::Method, Self::Attribute>)
                    -> Self::HandleCast {
         futures::finished(()).boxed()

@@ -27,8 +27,8 @@ enum OutgoingCommand {
 
 #[derive(Debug)]
 enum IncomingCommand {
-    Recv(SocketAddr, SocketAddr, Result<RawMessage>),
-    Exit(SocketAddr, SocketAddr, Result<()>),
+    Recv(SocketAddr, Result<RawMessage>),
+    Exit(SocketAddr, Result<()>),
 }
 
 #[derive(Debug)]
@@ -83,27 +83,25 @@ impl TcpServerTransport {
         let incoming_tx0 = self.incoming_tx.clone();
         let incoming_tx1 = self.incoming_tx.clone();
         let (outgoing_tx, outgoing_rx) = mpsc::channel();
-        let future = track_err!(connected)
+        self.spawner.spawn(track_err!(connected)
             .and_then(move |stream| {
-                          TcpHandleClientLoop::new(client, stream, incoming_tx0, outgoing_rx)
-                      })
+                TcpHandleClientLoop::new(client, stream, incoming_tx0, outgoing_rx)
+            })
             .then(move |result| {
-                      let server = "0.0.0.0:0".parse().unwrap(); // XXX: dummy address
-                      let _ = incoming_tx1.send(IncomingCommand::Exit(client, server, result));
-                      Ok(())
-                  });
-        self.spawner.spawn(future);
+                let _ = incoming_tx1.send(IncomingCommand::Exit(client, result));
+                Ok(())
+            }));
         self.clients.insert(client, outgoing_tx);
     }
     fn handle_incoming_command(&mut self,
                                command: IncomingCommand)
-                               -> Option<(SocketAddr, SocketAddr, Result<RawMessage>)> {
+                               -> Option<(SocketAddr, Result<RawMessage>)> {
         match command {
-            IncomingCommand::Recv(client, server, message) => Some((client, server, message)),
-            IncomingCommand::Exit(client, server, result) => {
-                self.clients.remove(&client);
+            IncomingCommand::Recv(addr, message) => Some((addr, message)),
+            IncomingCommand::Exit(addr, result) => {
+                self.clients.remove(&addr);
                 if let Err(e) = result {
-                    Some((client, server, Err(e)))
+                    Some((addr, Err(e)))
                 } else {
                     None
                 }
@@ -141,7 +139,7 @@ impl Sink for TcpServerTransport {
     }
 }
 impl Stream for TcpServerTransport {
-    type Item = (SocketAddr, SocketAddr, Result<RawMessage>);
+    type Item = (SocketAddr, Result<RawMessage>);
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
@@ -205,9 +203,9 @@ impl Future for TcpHandleClientLoop {
             match track_try!(self.transport.poll()) {
                 Async::NotReady => return Ok(Async::NotReady),
                 Async::Ready(None) => return Ok(Async::Ready(())),
-                Async::Ready(Some((peer, local, message))) => {
+                Async::Ready(Some((peer, message))) => {
                     assert_eq!(peer, self.peer);
-                    let command = IncomingCommand::Recv(peer, local, message);
+                    let command = IncomingCommand::Recv(peer, message);
                     let _ = self.incoming_tx.send(command);
                 }
             }
@@ -246,7 +244,7 @@ impl Sink for TcpClientTransport {
     }
 }
 impl Stream for TcpClientTransport {
-    type Item = (SocketAddr, SocketAddr, Result<RawMessage>);
+    type Item = (SocketAddr, Result<RawMessage>);
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         self.stream.poll()
@@ -290,7 +288,6 @@ impl TcpMessageSink {
                     if let Some(&(ref message, _)) = self.queue.front() {
                         state = Err(stream.async_write_all(message.to_bytes()));
                     } else {
-                        self.state = Some(Ok(stream));
                         return Ok(Async::Ready(()));
                     }
                 }
@@ -338,32 +335,31 @@ impl TcpMessageStream {
     fn recv_message_bytes(stream: TcpStream) -> RecvMessageBytes {
         let pattern = vec![0; 20]
             .and_then(|mut buf| {
-                          let message_len = (&mut &buf[2..4]).read_u16be().unwrap();
-                          buf.resize(20 + message_len as usize, 0);
-                          Window::new(buf).skip(20)
-                      })
+                let message_len = (&mut &buf[2..4]).read_u16be().unwrap();
+                buf.resize(20 + message_len as usize, 0);
+                Window::new(buf).skip(20)
+            })
             .and_then(|buf| buf.into_inner());
         pattern.read_from(stream).map_err(|e| e.into_error()).boxed()
     }
 }
 impl Stream for TcpMessageStream {
-    type Item = (SocketAddr, SocketAddr, Result<RawMessage>);
+    type Item = (SocketAddr, Result<RawMessage>);
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let polled = track_try!(match self.future.poll() {
-                                    Err(e) => {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Ok(Async::Ready(None));
+            Err(e) => {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Ok(Async::Ready(None));
+                }
+                Err(e)
             }
-            Err(e)
-        }
-                                    Ok(v) => Ok(v),
-                                });
+            Ok(v) => Ok(v),
+        });
         if let Async::Ready((stream, bytes)) = polled {
             let message = track_err!(RawMessage::read_from(&mut &bytes[..]));
-            let local = stream.local_addr().unwrap();
             self.future = Self::recv_message_bytes(stream);
-            Ok(Async::Ready(Some((self.peer, local, message))))
+            Ok(Async::Ready(Some((self.peer, message))))
         } else {
             Ok(Async::NotReady)
         }

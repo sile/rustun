@@ -43,28 +43,23 @@ impl<T, H> BaseServerLoop<T, H>
           H::HandleCall: Send + 'static,
           H::HandleCast: Send + 'static
 {
-    fn handle_message(&mut self,
-                      client: SocketAddr,
-                      server: SocketAddr,
-                      message: RawMessage)
-                      -> Result<()> {
+    fn handle_message(&mut self, client: SocketAddr, message: RawMessage) -> Result<()> {
         match message.class() {
             Class::Request => {
                 let request = track_try!(message.try_into_request());
-                let future = self.handler.handle_call(client, server, request);
+                let future = self.handler.handle_call(client, request);
                 let response_tx = self.response_tx.clone();
-                let future =
-                    future.and_then(move |response| {
-                                        let message = RawMessage::try_from_response(response);
-                                        let _ = response_tx.send((client, message));
-                                        Ok(())
-                                    });
+                let future = future.and_then(move |response| {
+                    let message = RawMessage::try_from_response(response);
+                    let _ = response_tx.send((client, message));
+                    Ok(())
+                });
                 self.spawner.spawn(future);
                 Ok(())
             }
             Class::Indication => {
                 let indication = track_try!(message.try_into_indication());
-                let future = self.handler.handle_cast(client, server, indication);
+                let future = self.handler.handle_cast(client, indication);
                 self.spawner.spawn(future);
                 Ok(())
             }
@@ -93,7 +88,8 @@ impl<T, H> Future for BaseServerLoop<T, H>
                     self.handler.handle_error(client, error);
                 }
                 Async::Ready(Some((client, Ok(message)))) => {
-                    let started = track_try!(self.transport.start_send((client, message, None)));
+                    let started = track_try!(self.transport
+                        .start_send((client, message, None)));
                     if let AsyncSink::NotReady((client, message, _)) = started {
                         let e = track!(ErrorKind::Full.error(),
                                        "Cannot response to transaction {:?}",
@@ -103,12 +99,12 @@ impl<T, H> Future for BaseServerLoop<T, H>
                 }
             }
 
-            let (client, server, message) = match track_try!(self.transport.poll()) {
+            let (client, message) = match track_try!(self.transport.poll()) {
                 Async::NotReady => return Ok(Async::NotReady),
                 Async::Ready(None) => return Ok(Async::Ready(())),
-                Async::Ready(Some((client, server, message))) => (client, server, message),
+                Async::Ready(Some((client, message))) => (client, message),
             };
-            if let Err(e) = message.and_then(|m| self.handle_message(client, server, m)) {
+            if let Err(e) = message.and_then(|m| self.handle_message(client, m)) {
                 self.handler.handle_error(client, e);
             }
         }
