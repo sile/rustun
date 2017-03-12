@@ -344,7 +344,7 @@ impl TcpMessageStream {
                           buf.resize(20 + message_len as usize, 0);
                           Window::new(buf).skip(20)
                       })
-            .and_then(|buf| buf.into_inner());
+            .and_then(|buf| Ok(buf.into_inner()));
         pattern.read_from(stream).map_err(|e| e.into_error()).boxed()
     }
 }
@@ -352,15 +352,16 @@ impl Stream for TcpMessageStream {
     type Item = (SocketAddr, Result<RawMessage>);
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let polled = track_try!(match self.future.poll() {
-                                    Err(e) => {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Ok(Async::Ready(None));
+        let result = match self.future.poll() {
+            Err(e) => {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    return Ok(Async::Ready(None));
+                }
+                Err(e)
             }
-            Err(e)
-        }
-                                    Ok(v) => Ok(v),
-                                });
+            Ok(v) => Ok(v),
+        };
+        let polled = track_try!(result);
         if let Async::Ready((stream, bytes)) = polled {
             let message = track_err!(RawMessage::read_from(&mut &bytes[..]));
             self.future = Self::recv_message_bytes(stream);
