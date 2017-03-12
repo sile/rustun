@@ -83,14 +83,18 @@ impl TcpServerTransport {
         let incoming_tx0 = self.incoming_tx.clone();
         let incoming_tx1 = self.incoming_tx.clone();
         let (outgoing_tx, outgoing_rx) = mpsc::channel();
-        self.spawner.spawn(track_err!(connected)
-            .and_then(move |stream| {
-                TcpHandleClientLoop::new(client, stream, incoming_tx0, outgoing_rx)
-            })
-            .then(move |result| {
-                let _ = incoming_tx1.send(IncomingCommand::Exit(client, result));
-                Ok(())
-            }));
+        self.spawner
+            .spawn(track_err!(connected)
+                       .and_then(move |stream| {
+                                     TcpHandleClientLoop::new(client,
+                                                              stream,
+                                                              incoming_tx0,
+                                                              outgoing_rx)
+                                 })
+                       .then(move |result| {
+                                 let _ = incoming_tx1.send(IncomingCommand::Exit(client, result));
+                                 Ok(())
+                             }));
         self.clients.insert(client, outgoing_tx);
     }
     fn handle_incoming_command(&mut self,
@@ -288,6 +292,7 @@ impl TcpMessageSink {
                     if let Some(&(ref message, _)) = self.queue.front() {
                         state = Err(stream.async_write_all(message.to_bytes()));
                     } else {
+                        self.state = Some(Ok(stream));
                         return Ok(Async::Ready(()));
                     }
                 }
@@ -335,10 +340,10 @@ impl TcpMessageStream {
     fn recv_message_bytes(stream: TcpStream) -> RecvMessageBytes {
         let pattern = vec![0; 20]
             .and_then(|mut buf| {
-                let message_len = (&mut &buf[2..4]).read_u16be().unwrap();
-                buf.resize(20 + message_len as usize, 0);
-                Window::new(buf).skip(20)
-            })
+                          let message_len = (&mut &buf[2..4]).read_u16be().unwrap();
+                          buf.resize(20 + message_len as usize, 0);
+                          Window::new(buf).skip(20)
+                      })
             .and_then(|buf| buf.into_inner());
         pattern.read_from(stream).map_err(|e| e.into_error()).boxed()
     }
@@ -348,14 +353,14 @@ impl Stream for TcpMessageStream {
     type Error = Error;
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let polled = track_try!(match self.future.poll() {
-            Err(e) => {
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    return Ok(Async::Ready(None));
-                }
-                Err(e)
+                                    Err(e) => {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return Ok(Async::Ready(None));
             }
-            Ok(v) => Ok(v),
-        });
+            Err(e)
+        }
+                                    Ok(v) => Ok(v),
+                                });
         if let Async::Ready((stream, bytes)) = polled {
             let message = track_err!(RawMessage::read_from(&mut &bytes[..]));
             self.future = Self::recv_message_bytes(stream);
