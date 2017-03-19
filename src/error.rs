@@ -19,6 +19,9 @@ pub enum ErrorKind {
     /// The target resource is full (maybe temporary).
     Full,
 
+    /// The input bytes are not a STUN message.
+    NotStun(Vec<u8>),
+
     /// The input is invalid.
     Invalid,
 
@@ -36,6 +39,7 @@ impl error::ErrorKind for ErrorKind {
         match *self {
             ErrorKind::Timeout => "The operation timed out",
             ErrorKind::Full => "The target resource is full (maybe temporary)",
+            ErrorKind::NotStun(_) => "The input bytes are not a STUN message",
             ErrorKind::Invalid => "The input is invalid",
             ErrorKind::Unsupported => {
                 "The input is valid, but requires unsupported features by this agent."
@@ -50,6 +54,7 @@ impl From<ErrorKind> for ErrorCode {
         match f {
             ErrorKind::Timeout => ErrorCode::new(408, "Request Timeout".to_string()).unwrap(),
             ErrorKind::Full => ErrorCode::new(503, "Service Unavailable".to_string()).unwrap(),
+            ErrorKind::NotStun(_) => errors::BadRequest.into(),
             ErrorKind::Invalid => errors::BadRequest.into(),
             ErrorKind::Unsupported => ErrorCode::new(501, "Not Implemented".to_string()).unwrap(),
             ErrorKind::ErrorCode(code) => code,

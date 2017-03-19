@@ -250,7 +250,11 @@ impl Stream for UdpMessageStream {
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let polled = track_try!(self.0.poll().map_err(|(_, _, e)| e));
         if let Async::Ready((socket, buf, size, peer)) = polled {
-            let result = track_err!(RawMessage::read_from(&mut &buf[..size]));
+            let result = track!(RawMessage::read_from(&mut &buf[..size]));
+            let result = result.map_err(|e| {
+                                            let bytes = Vec::from(&buf[..size]);
+                                            ErrorKind::NotStun(bytes).takes_over(e)
+                                        });
             self.0 = socket.recv_from(buf);
             Ok(Async::Ready(Some((peer, result))))
         } else {
