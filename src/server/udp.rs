@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use std::net::SocketAddr;
 use fibers::Spawn;
+use fibers::net::UdpSocket;
 
 use HandleMessage;
 use transport::{UdpTransport, UdpTransportBuilder};
@@ -17,6 +18,12 @@ impl UdpServer {
     pub fn new(bind_addr: SocketAddr) -> Self {
         let mut builder = UdpTransportBuilder::new();
         builder.bind_addr(bind_addr);
+        UdpServer { builder: builder }
+    }
+
+    /// Makes a new `UdpServer` instance which uses the `socket` to communiate with clients.
+    pub fn with_socket(socket: UdpSocket) -> Self {
+        let builder = UdpTransportBuilder::with_socket(socket);
         UdpServer { builder: builder }
     }
 

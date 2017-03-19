@@ -19,7 +19,7 @@ use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
 /// `UdpTransport` builder.
 #[derive(Debug, Clone)]
 pub struct UdpTransportBuilder {
-    bind_addr: SocketAddr,
+    socket: ::std::result::Result<UdpSocket, SocketAddr>,
     rto: Duration,
     rto_cache_duration: Duration,
     min_transaction_interval: Duration,
@@ -29,8 +29,9 @@ pub struct UdpTransportBuilder {
 impl UdpTransportBuilder {
     /// Makes a new `UdpTransportBuilder` instance with the default settings.
     pub fn new() -> Self {
+        let bind_addr = "0.0.0.0:0".parse().unwrap();
         UdpTransportBuilder {
-            bind_addr: "0.0.0.0:0".parse().unwrap(),
+            socket: Err(bind_addr),
             rto: Duration::from_millis(constants::DEFAULT_RTO_MS),
             rto_cache_duration: Duration::from_millis(constants::DEFAULT_RTO_CACHE_DURATION_MS),
             min_transaction_interval:
@@ -40,11 +41,16 @@ impl UdpTransportBuilder {
         }
     }
 
+    /// Makes a new `UdpTransportBuilder` instance with `socket`.
+    pub fn with_socket(socket: UdpSocket) -> Self {
+        UdpTransportBuilder { socket: Ok(socket), ..Self::new() }
+    }
+
     /// Sets the bind address of this UDP socket.
     ///
     /// The default address is "0.0.0.0:0".
     pub fn bind_addr(&mut self, addr: SocketAddr) -> &mut Self {
-        self.bind_addr = addr;
+        self.socket = Err(addr);
         self
     }
 
@@ -160,14 +166,27 @@ impl UdpTransport {
             min_transaction_interval: builder.min_transaction_interval,
             max_outstanding_transactions: builder.max_outstanding_transactions,
         };
-        UdpTransport(UdpTransportInner::Binding {
-                         bind: UdpTransportBind {
-                             future: UdpSocket::bind(builder.bind_addr),
-                             recv_buffer_size: builder.recv_buffer_size,
-                             sink_params: sink_params,
-                         },
-                         queue: VecDeque::new(),
-                     })
+        let inner = match builder.socket.clone() {
+            Err(bind_addr) => {
+                UdpTransportInner::Binding {
+                    bind: UdpTransportBind {
+                        future: UdpSocket::bind(bind_addr),
+                        recv_buffer_size: builder.recv_buffer_size,
+                        sink_params: sink_params,
+                    },
+                    queue: VecDeque::new(),
+                }
+            }
+            Ok(socket) => {
+                let sink = UdpMessageSink::new(socket.clone(), sink_params);
+                let stream = UdpMessageStream::new(socket, vec![0; builder.recv_buffer_size]);
+                UdpTransportInner::Binded {
+                    sink: sink,
+                    stream: stream,
+                }
+            }
+        };
+        UdpTransport(inner)
     }
     fn poll_bind_complete(&mut self) -> Result<()> {
         let next = match self.0 {
