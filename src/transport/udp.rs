@@ -7,11 +7,11 @@ use fibers::net::UdpSocket;
 use fibers::net::futures::{UdpSocketBind, RecvFrom};
 use fibers::sync::oneshot::Link;
 use fibers::time::timer::{self, Timeout};
-use futures::{BoxFuture, Future, Stream, Poll, Async, StartSend, Sink, AsyncSink};
+use futures::{Future, Stream, Poll, Async, StartSend, Sink, AsyncSink};
 use futures::future::Either;
 use trackable::error::ErrorKindExt;
 
-use {Result, Error, ErrorKind};
+use {Result, Error, ErrorKind, BoxFuture};
 use message::{Class, RawMessage};
 use constants;
 use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
@@ -427,7 +427,7 @@ impl Sink for UdpMessageSink {
                     track_assert_eq!(bytes.len(), sent_size, ErrorKind::Other);
                     Ok((socket, item))
                 });
-                self.socket = Either::B(future.boxed());
+                self.socket = Either::B(Box::new(future));
                 self.poll_complete()
             } else {
                 self.queue.push(item);

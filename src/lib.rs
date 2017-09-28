@@ -90,3 +90,5 @@ pub mod server;
 
 /// A specialized `Result` type for this crate.
 pub type Result<T> = ::std::result::Result<T, Error>;
+
+type BoxFuture<T, E> = Box<futures::Future<Item = T, Error = E> + Send + 'static>;

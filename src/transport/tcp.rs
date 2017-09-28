@@ -9,14 +9,14 @@ use fibers::net::futures::{TcpListenerBind, Connected};
 use fibers::net::streams::Incoming;
 use fibers::sync::mpsc;
 use fibers::sync::oneshot::Link;
-use futures::{Future, BoxFuture, Async, Poll, Stream, Sink, AsyncSink, StartSend};
+use futures::{Future, Async, Poll, Stream, Sink, AsyncSink, StartSend};
 use handy_async::io::{ReadFrom, AsyncWrite};
 use handy_async::io::futures::WriteAll;
 use handy_async::sync_io::ReadExt;
 use handy_async::pattern::{Pattern, Window};
 use trackable::error::ErrorKindExt;
 
-use {Result, Error, ErrorKind};
+use {Result, Error, ErrorKind, BoxFuture};
 use message::RawMessage;
 use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
 
@@ -346,10 +346,7 @@ impl TcpMessageStream {
                 Window::new(buf).skip(20)
             })
             .and_then(|buf| Ok(buf.into_inner()));
-        pattern
-            .read_from(stream)
-            .map_err(|e| e.into_error())
-            .boxed()
+        Box::new(pattern.read_from(stream).map_err(|e| e.into_error()))
     }
 }
 impl Stream for TcpMessageStream {

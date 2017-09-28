@@ -1,9 +1,9 @@
 //! `HandleMessage` trait implementations.
 use std::net::SocketAddr;
 use slog::{self, Logger};
-use futures::{self, Future, BoxFuture};
+use futures;
 
-use {Error, HandleMessage};
+use {Error, HandleMessage, BoxFuture};
 use message::{Request, Response, Indication};
 use rfc5389;
 use rfc5389::attributes::XorMappedAddress;
@@ -39,14 +39,14 @@ impl HandleMessage for BindingHandler {
     ) -> Self::HandleCall {
         let mut response = request.into_success_response();
         response.add_attribute(XorMappedAddress::new(client));
-        futures::finished(Ok(response)).boxed()
+        Box::new(futures::finished(Ok(response)))
     }
     fn handle_cast(
         &mut self,
         _client: SocketAddr,
         _message: Indication<Self::Method, Self::Attribute>,
     ) -> Self::HandleCast {
-        futures::finished(()).boxed()
+        Box::new(futures::finished(()))
     }
     fn handle_error(&mut self, client: SocketAddr, error: Error) {
         warn!(
