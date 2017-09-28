@@ -204,7 +204,7 @@ impl UdpTransport {
                         let started = track_try!(sink.start_send(item));
                         if let AsyncSink::NotReady((_, _, Some(link))) = started {
                             let e = ErrorKind::Other.cause(format!("Sink is full"));
-                            link.exit(Err(track!(e)));
+                            link.exit(Err(track!(e).into()));
                         }
                     }
                     UdpTransportInner::Binded {
@@ -282,7 +282,7 @@ impl Stream for UdpMessageStream {
             let result = track!(RawMessage::read_from(&mut &buf[..size]));
             let result = result.map_err(|e| {
                 let bytes = Vec::from(&buf[..size]);
-                ErrorKind::NotStun(bytes).takes_over(e)
+                ErrorKind::NotStun(bytes).takes_over(e).into()
             });
             self.0 = socket.recv_from(buf);
             Ok(Async::Ready(Some((peer, result))))

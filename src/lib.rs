@@ -58,6 +58,17 @@ extern crate futures;
 extern crate trackable;
 extern crate handy_async;
 
+macro_rules! track_try {
+    ($expr:expr) => {
+        track!($expr.map_err(::Error::from))?
+    }
+}
+macro_rules! track_err {
+    ($expr:expr) => {
+        $expr.map_err(|e| track!(::Error::from(e)))
+    }
+}
+
 pub use error::{Error, ErrorKind};
 pub use client::Client;
 pub use server::HandleMessage;

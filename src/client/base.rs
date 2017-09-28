@@ -193,7 +193,7 @@ impl Future for BaseCallRaw {
             return Ok(Async::Ready(message));
         }
         if let Async::Ready(()) = track_try!(self.timeout.poll()) {
-            return Err(track!(ErrorKind::Timeout.error()));
+            return Err(track!(ErrorKind::Timeout.error()).into());
         }
         Ok(Async::NotReady)
     }

@@ -74,7 +74,7 @@ where
             }
             other => {
                 let e = ErrorKind::Invalid.cause(format!("Unexpected class: {:?}", other));
-                Err(track!(e))
+                Err(track!(e).into())
             }
         }
     }
@@ -118,7 +118,7 @@ where
                             "Cannot response to transaction {:?}",
                             message.transaction_id()
                         );
-                        self.handler.handle_error(client, e);
+                        self.handler.handle_error(client, e.into());
                     }
                 }
             }

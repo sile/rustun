@@ -108,7 +108,7 @@ impl SocketAddrValue {
             }
             _ => {
                 let message = format!("Unsupported address family: {}", family);
-                return Err(ErrorKind::Unsupported.cause(message));
+                return Err(ErrorKind::Unsupported.cause(message).into());
             }
         };
         Ok(Self::new(SocketAddr::new(ip, port)))

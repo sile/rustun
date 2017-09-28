@@ -1,14 +1,36 @@
 use std;
 use std::io;
 use std::sync::mpsc::RecvError;
-use trackable::error::{self, IntoTrackableError, TrackableError, ErrorKindExt};
+use trackable::error::{self, TrackableError, ErrorKindExt};
 use fibers::sync::oneshot::MonitorError;
 
 use rfc5389::attributes::ErrorCode;
 use rfc5389::errors;
 
 /// The error type for this crate.
-pub type Error = TrackableError<ErrorKind>;
+#[derive(Debug, Clone)]
+pub struct Error(TrackableError<ErrorKind>);
+derive_traits_for_trackable_error_newtype!(Error, ErrorKind);
+impl From<MonitorError<Error>> for Error {
+    fn from(f: MonitorError<Error>) -> Self {
+        f.unwrap_or(ErrorKind::Other.into())
+    }
+}
+impl From<io::Error> for Error {
+    fn from(f: io::Error) -> Self {
+        ErrorKind::Other.cause(f).into()
+    }
+}
+impl From<RecvError> for Error {
+    fn from(f: RecvError) -> Self {
+        ErrorKind::Other.cause(f).into()
+    }
+}
+impl From<std::time::SystemTimeError> for Error {
+    fn from(f: std::time::SystemTimeError) -> Self {
+        ErrorKind::Other.cause(f).into()
+    }
+}
 
 /// A list of error kind.
 #[derive(Debug, Clone)]
@@ -60,25 +82,5 @@ impl From<ErrorKind> for ErrorCode {
             ErrorKind::ErrorCode(code) => code,
             ErrorKind::Other => errors::ServerError.into(),
         }
-    }
-}
-impl IntoTrackableError<MonitorError<Error>> for ErrorKind {
-    fn into_trackable_error(f: MonitorError<Error>) -> Error {
-        f.unwrap_or(ErrorKind::Other.into())
-    }
-}
-impl IntoTrackableError<io::Error> for ErrorKind {
-    fn into_trackable_error(f: io::Error) -> Error {
-        ErrorKind::Other.cause(f)
-    }
-}
-impl IntoTrackableError<RecvError> for ErrorKind {
-    fn into_trackable_error(f: RecvError) -> Error {
-        ErrorKind::Other.cause(f)
-    }
-}
-impl IntoTrackableError<std::time::SystemTimeError> for ErrorKind {
-    fn into_trackable_error(f: std::time::SystemTimeError) -> Error {
-        ErrorKind::Other.cause(f)
     }
 }

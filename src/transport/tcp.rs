@@ -134,7 +134,7 @@ impl Sink for TcpServerTransport {
         };
         if let Some(link) = link {
             let e = ErrorKind::Other.cause(format!("No such client found: {}", peer));
-            link.exit(Err(track!(e)));
+            link.exit(Err(track!(e).into()));
         }
         Ok(AsyncSink::Ready)
     }
