@@ -57,17 +57,23 @@ pub trait Message {
     /// Returns the reference to the specified attribute
     /// if it exists in the attributes of this method.
     fn get_attribute<A>(&self) -> Option<&A>
-        where Self::Attribute: TryAsRef<A>
+    where
+        Self::Attribute: TryAsRef<A>,
     {
-        self.get_attributes().iter().filter_map(|a| a.try_as_ref()).nth(0)
+        self.get_attributes()
+            .iter()
+            .filter_map(|a| a.try_as_ref())
+            .nth(0)
     }
 
     /// Tries to convert to `RawMessage`.
     fn try_to_raw(&self) -> Result<RawMessage, Error> {
-        let mut raw = RawMessage::new(self.get_class(),
-                                      self.get_method().as_u12(),
-                                      self.get_transaction_id().clone(),
-                                      Vec::new());
+        let mut raw = RawMessage::new(
+            self.get_class(),
+            self.get_method().as_u12(),
+            self.get_transaction_id().clone(),
+            Vec::new(),
+        );
         for attr in self.get_attributes() {
             let raw_attr = track_try!(attr.try_to_raw(&raw));
             raw.push_attribute(raw_attr);
@@ -82,16 +88,26 @@ impl<M: Method, A: Attribute> Message for Response<M, A> {
     type Method = M;
     type Attribute = A;
     fn get_class(&self) -> Class {
-        self.as_ref().map(|r| r.get_class()).unwrap_or_else(|r| r.get_class())
+        self.as_ref().map(|r| r.get_class()).unwrap_or_else(
+            |r| r.get_class(),
+        )
     }
     fn get_method(&self) -> &Self::Method {
-        self.as_ref().map(|r| r.get_method()).unwrap_or_else(|r| r.get_method())
+        self.as_ref().map(|r| r.get_method()).unwrap_or_else(
+            |r| r.get_method(),
+        )
     }
     fn get_transaction_id(&self) -> &TransactionId {
-        self.as_ref().map(|r| r.get_transaction_id()).unwrap_or_else(|r| r.get_transaction_id())
+        self.as_ref()
+            .map(|r| r.get_transaction_id())
+            .unwrap_or_else(|r| r.get_transaction_id())
     }
     fn get_attributes(&self) -> &[Self::Attribute] {
-        self.as_ref().map(|r| r.get_attributes()).unwrap_or_else(|r| r.get_attributes())
+        self.as_ref().map(|r| r.get_attributes()).unwrap_or_else(
+            |r| {
+                r.get_attributes()
+            },
+        )
     }
 }
 
@@ -103,12 +119,14 @@ pub struct Request<M, A> {
     attributes: Vec<A>,
 }
 impl<M, A> Request<M, A>
-    where M: Method,
-          A: Attribute
+where
+    M: Method,
+    A: Attribute,
 {
     /// Makes a new request message.
     pub fn new(method: M) -> Self
-        where M: Requestable
+    where
+        M: Requestable,
     {
         Request {
             method: method,
@@ -179,12 +197,14 @@ pub struct Indication<M, A> {
     attributes: Vec<A>,
 }
 impl<M, A> Indication<M, A>
-    where M: Method,
-          A: Attribute
+where
+    M: Method,
+    A: Attribute,
 {
     /// Makes a new indication message.
     pub fn new(method: M) -> Self
-        where M: Indicatable
+    where
+        M: Indicatable,
     {
         Indication {
             method: method,
@@ -247,8 +267,9 @@ pub struct SuccessResponse<M, A> {
     attributes: Vec<A>,
 }
 impl<M, A> SuccessResponse<M, A>
-    where M: Method,
-          A: Attribute
+where
+    M: Method,
+    A: Attribute,
 {
     fn new(method: M, transaction_id: TransactionId) -> Self {
         SuccessResponse {
@@ -312,8 +333,9 @@ pub struct ErrorResponse<M, A> {
     attributes: Vec<A>,
 }
 impl<M, A> ErrorResponse<M, A>
-    where M: Method,
-          A: Attribute
+where
+    M: Method,
+    A: Attribute,
 {
     fn new(method: M, transaction_id: TransactionId) -> Self {
         ErrorResponse {
@@ -337,7 +359,8 @@ impl<M, A> ErrorResponse<M, A>
 
     /// Adds the `ErrorCode` attribute to the tail of the attributes of this message.
     pub fn with_error_code<T: Into<ErrorCode>>(self, error_code: T) -> Self
-        where A: From<ErrorCode>
+    where
+        A: From<ErrorCode>,
     {
         self.with_attribute(error_code.into())
     }

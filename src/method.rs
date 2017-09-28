@@ -42,16 +42,18 @@ pub trait Method: Sized {
 
     /// Makes a request message which have this method.
     fn request<A>(self) -> Request<Self, A>
-        where Self: Requestable,
-              A: Attribute
+    where
+        Self: Requestable,
+        A: Attribute,
     {
         Request::new(self)
     }
 
     /// Makes a indication message which have this method.
     fn indication<A>(self) -> Indication<Self, A>
-        where Self: Indicatable,
-              A: Attribute
+    where
+        Self: Indicatable,
+        A: Attribute,
     {
         Indication::new(self)
     }

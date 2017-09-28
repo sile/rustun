@@ -68,7 +68,8 @@ pub struct TcpServerTransport {
 impl TcpServerTransport {
     /// Makes a new `TcpServerTransport` instance.
     pub fn new<S>(spawner: S, bind_addr: SocketAddr) -> Self
-        where S: Spawn + Send + 'static
+    where
+        S: Spawn + Send + 'static,
     {
         let (incoming_tx, incoming_rx) = mpsc::channel();
         TcpServerTransport {
@@ -83,23 +84,22 @@ impl TcpServerTransport {
         let incoming_tx0 = self.incoming_tx.clone();
         let incoming_tx1 = self.incoming_tx.clone();
         let (outgoing_tx, outgoing_rx) = mpsc::channel();
-        self.spawner
-            .spawn(track_err!(connected)
-                       .and_then(move |stream| {
-                                     TcpHandleClientLoop::new(client,
-                                                              stream,
-                                                              incoming_tx0,
-                                                              outgoing_rx)
-                                 })
-                       .then(move |result| {
-                                 let _ = incoming_tx1.send(IncomingCommand::Exit(client, result));
-                                 Ok(())
-                             }));
+        self.spawner.spawn(
+            track_err!(connected)
+                .and_then(move |stream| {
+                    TcpHandleClientLoop::new(client, stream, incoming_tx0, outgoing_rx)
+                })
+                .then(move |result| {
+                    let _ = incoming_tx1.send(IncomingCommand::Exit(client, result));
+                    Ok(())
+                }),
+        );
         self.clients.insert(client, outgoing_tx);
     }
-    fn handle_incoming_command(&mut self,
-                               command: IncomingCommand)
-                               -> Option<(SocketAddr, Result<RawMessage>)> {
+    fn handle_incoming_command(
+        &mut self,
+        command: IncomingCommand,
+    ) -> Option<(SocketAddr, Result<RawMessage>)> {
         match command {
             IncomingCommand::Recv(addr, message) => Some((addr, message)),
             IncomingCommand::Exit(addr, result) => {
@@ -176,11 +176,12 @@ struct TcpHandleClientLoop {
     outgoing_rx: mpsc::Receiver<OutgoingCommand>,
 }
 impl TcpHandleClientLoop {
-    fn new(peer: SocketAddr,
-           stream: TcpStream,
-           incoming_tx: mpsc::Sender<IncomingCommand>,
-           outgoing_rx: mpsc::Receiver<OutgoingCommand>)
-           -> Self {
+    fn new(
+        peer: SocketAddr,
+        stream: TcpStream,
+        incoming_tx: mpsc::Sender<IncomingCommand>,
+        outgoing_rx: mpsc::Receiver<OutgoingCommand>,
+    ) -> Self {
         TcpHandleClientLoop {
             peer: peer,
             transport: TcpClientTransport::new(peer, stream),
@@ -340,12 +341,15 @@ impl TcpMessageStream {
     fn recv_message_bytes(stream: TcpStream) -> RecvMessageBytes {
         let pattern = vec![0; 20]
             .and_then(|mut buf| {
-                          let message_len = (&mut &buf[2..4]).read_u16be().unwrap();
-                          buf.resize(20 + message_len as usize, 0);
-                          Window::new(buf).skip(20)
-                      })
+                let message_len = (&mut &buf[2..4]).read_u16be().unwrap();
+                buf.resize(20 + message_len as usize, 0);
+                Window::new(buf).skip(20)
+            })
             .and_then(|buf| Ok(buf.into_inner()));
-        pattern.read_from(stream).map_err(|e| e.into_error()).boxed()
+        pattern
+            .read_from(stream)
+            .map_err(|e| e.into_error())
+            .boxed()
     }
 }
 impl Stream for TcpMessageStream {

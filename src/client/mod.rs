@@ -32,8 +32,9 @@ pub trait Client {
     /// Makes a `Future` that sends the request message to a server and
     /// waits the response from it.
     fn call<M, A>(&mut self, message: Request<M, A>) -> futures::Call<M, A, Self::CallRaw>
-        where M: Method,
-              A: Attribute
+    where
+        M: Method,
+        A: Attribute,
     {
         match track_err!(RawMessage::try_from_request(message)) {
             Err(e) => futures_impl::call(Either::A(failed(e))),
@@ -43,8 +44,9 @@ pub trait Client {
 
     /// Makes a `Future` that sends the indication message to a server.
     fn cast<M, A>(&mut self, message: Indication<M, A>) -> futures::Cast<Self::CastRaw>
-        where M: Method,
-              A: Attribute
+    where
+        M: Method,
+        A: Attribute,
     {
         match track_err!(RawMessage::try_from_indication(message)) {
             Err(e) => futures_impl::cast(Either::A(failed(e))),
@@ -78,7 +80,8 @@ mod futures_impl {
     /// This is created by calling `Client::cast` method.
     pub struct Cast<F>(Either<Failed<(), Error>, F>);
     impl<F> Future for Cast<F>
-        where F: Future<Item = (), Error = Error>
+    where
+        F: Future<Item = (), Error = Error>,
     {
         type Item = ();
         type Error = Error;
@@ -104,9 +107,10 @@ mod futures_impl {
     /// This is created by calling `Client::call` method.
     pub struct Call<M, A, F>(Either<Failed<RawMessage, Error>, F>, PhantomData<(M, A)>);
     impl<M, A, F> Future for Call<M, A, F>
-        where M: Method,
-              A: Attribute,
-              F: Future<Item = RawMessage, Error = Error>
+    where
+        M: Method,
+        A: Attribute,
+        F: Future<Item = RawMessage, Error = Error>,
     {
         type Item = Response<M, A>;
         type Error = Error;

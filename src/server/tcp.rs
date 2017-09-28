@@ -19,8 +19,9 @@ impl TcpServer {
 
     /// Starts the TCP server with `handler`.
     pub fn start<S, H>(&self, spawner: S, handler: H) -> TcpServerLoop<H>
-        where S: Spawn + Clone + Send + 'static,
-              H: HandleMessage
+    where
+        S: Spawn + Clone + Send + 'static,
+        H: HandleMessage,
     {
         let transport = TcpServerTransport::new(spawner.clone(), self.bind_addr);
         BaseServer::start(spawner, transport, handler)

@@ -34,7 +34,8 @@ pub struct BaseClient<T> {
     _phantom: PhantomData<T>,
 }
 impl<T> BaseClient<T>
-    where T: Transport + Send + 'static
+where
+    T: Transport + Send + 'static,
 {
     /// Makes a new `BaseClient` instance which communicates with `server`.
     pub fn new<S: Spawn>(spawner: &S, server: SocketAddr, transport: T) -> Self {
@@ -89,16 +90,18 @@ impl<T: Transport> BaseClientLoop<T> {
     fn handle_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::Cast(message, link) => {
-                let result = track_try!(self.transport
-                    .start_send((self.server, message, Some(link))));
+                let result = track_try!(self.transport.start_send(
+                    (self.server, message, Some(link)),
+                ));
                 if let AsyncSink::NotReady((_, _, Some(link))) = result {
                     link.exit(track_err!(Err(ErrorKind::Full)));
                 }
             }
             Command::Call(message, link, monitored) => {
                 let transaction_id = message.transaction_id().clone();
-                let result = track_try!(self.transport
-                    .start_send((self.server, message, Some(link))));
+                let result = track_try!(self.transport.start_send(
+                    (self.server, message, Some(link)),
+                ));
                 if let AsyncSink::NotReady((_, _, Some(link))) = result {
                     link.exit(track_err!(Err(ErrorKind::Full)));
                 } else {
@@ -122,32 +125,33 @@ impl<T: Transport> Future for BaseClientLoop<T> {
     type Error = ();
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let result = (|| loop {
-            let no_transaction = track_try!(self.transport.poll_complete()).is_ready();
-            if !no_transaction {
-                match track_try!(self.transport.poll()) {
-                    Async::NotReady => {}
-                    Async::Ready(None) => return track_err!(Err(disconnected())),
-                    Async::Ready(Some((peer, message))) => {
-                        match message {
-                            Ok(message) => {
-                                self.handle_message(peer, message);
-                            }
-                            Err(e) => {
-                                // TODO: logging
-                                println!("Error(from '{}'): {}", peer, e);
-                            }
-                        }
-                    }
-                }
-            }
-            match track_try!(self.command_rx.poll().map_err(|()| ErrorKind::Other)) {
-                Async::NotReady => return Ok(Async::NotReady),
-                Async::Ready(None) => return Ok(Async::Ready(())),
-                Async::Ready(Some(command)) => {
-                    track_try!(self.handle_command(command));
-                }
-            }
-        })();
+                          let no_transaction = track_try!(self.transport.poll_complete())
+                              .is_ready();
+                          if !no_transaction {
+                              match track_try!(self.transport.poll()) {
+                                  Async::NotReady => {}
+                                  Async::Ready(None) => return track_err!(Err(disconnected())),
+                                  Async::Ready(Some((peer, message))) => {
+                                      match message {
+                                          Ok(message) => {
+                                              self.handle_message(peer, message);
+                                          }
+                                          Err(e) => {
+                                              // TODO: logging
+                                              println!("Error(from '{}'): {}", peer, e);
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                          match track_try!(self.command_rx.poll().map_err(|()| ErrorKind::Other)) {
+                              Async::NotReady => return Ok(Async::NotReady),
+                              Async::Ready(None) => return Ok(Async::Ready(())),
+                              Async::Ready(Some(command)) => {
+                                  track_try!(self.handle_command(command));
+                              }
+                          }
+                      })();
         result.map_err(|e| {
             self.handle_error(e);
             ()
@@ -168,7 +172,9 @@ impl BaseCallRaw {
         let transaction_id = message.transaction_id().clone();
         let (link0, link1) = oneshot::link();
         let (monitored, monitor) = oneshot::monitor();
-        let _ = client.command_tx.send(Command::Call(message, link1, monitored));
+        let _ = client.command_tx.send(
+            Command::Call(message, link1, monitored),
+        );
         BaseCallRaw {
             transaction_id: transaction_id,
             _link: link0,

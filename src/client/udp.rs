@@ -7,12 +7,10 @@ use message::RawMessage;
 use super::BaseClient;
 
 /// `Future` that handle a request/response transaction issued by `UdpClient`.
-pub type UdpCallRaw =
-    <BaseClient<UdpTransport> as Client>::CallRaw;
+pub type UdpCallRaw = <BaseClient<UdpTransport> as Client>::CallRaw;
 
 /// `Future` that handle a indication transaction issued by `UdpClient`.
-pub type UdpCastRaw =
-    <BaseClient<UdpTransport> as Client>::CastRaw;
+pub type UdpCastRaw = <BaseClient<UdpTransport> as Client>::CastRaw;
 
 /// A [Client](trait.Client.html) trait implementation which
 /// uses [UdpTransport](../transport/struct.UdpTransport.html) as the transport layer.
@@ -29,10 +27,11 @@ impl UdpClient {
     /// Makes a future that results in a `UdpClient` instance which communicates with `server`.
     ///
     /// The resulting `UdpClient` uses `transport` as the UDP transport layer.
-    pub fn with_transport<S: Spawn>(spawner: &S,
-                                    server: SocketAddr,
-                                    transport: UdpTransport)
-                                    -> Self {
+    pub fn with_transport<S: Spawn>(
+        spawner: &S,
+        server: SocketAddr,
+        transport: UdpTransport,
+    ) -> Self {
         let inner = BaseClient::new(spawner, server, transport);
         UdpClient(inner)
     }

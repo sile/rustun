@@ -52,9 +52,11 @@ impl<S: Spawn> Future for InitTcpClient<S> {
     type Error = Error;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         Ok(track_try!(self.connect.poll()).map(|stream| {
-            TcpClient(BaseClient::new(&self.spawner,
-                                      self.server,
-                                      TcpClientTransport::new(self.server, stream)))
+            TcpClient(BaseClient::new(
+                &self.spawner,
+                self.server,
+                TcpClientTransport::new(self.server, stream),
+            ))
         }))
     }
 }

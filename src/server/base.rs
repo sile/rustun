@@ -15,9 +15,10 @@ pub struct BaseServer;
 impl BaseServer {
     /// Starts the STUN server.
     pub fn start<S, T, H>(spawner: S, transport: T, mut handler: H) -> BaseServerLoop<T, H>
-        where S: Spawn + Send + 'static,
-              T: Transport,
-              H: HandleMessage
+    where
+        S: Spawn + Send + 'static,
+        T: Transport,
+        H: HandleMessage,
     {
         let (info_tx, info_rx) = mpsc::channel();
         let (response_tx, response_rx) = mpsc::channel();
@@ -45,10 +46,11 @@ pub struct BaseServerLoop<T, H: HandleMessage> {
     response_rx: mpsc::Receiver<(SocketAddr, Result<RawMessage>)>,
 }
 impl<T, H> BaseServerLoop<T, H>
-    where T: Transport,
-          H: HandleMessage,
-          H::HandleCall: Send + 'static,
-          H::HandleCast: Send + 'static
+where
+    T: Transport,
+    H: HandleMessage,
+    H::HandleCall: Send + 'static,
+    H::HandleCast: Send + 'static,
 {
     fn handle_message(&mut self, client: SocketAddr, message: RawMessage) -> Result<()> {
         match message.class() {
@@ -56,12 +58,11 @@ impl<T, H> BaseServerLoop<T, H>
                 let request = track_try!(message.try_into_request());
                 let future = self.handler.handle_call(client, request);
                 let response_tx = self.response_tx.clone();
-                let future =
-                    future.and_then(move |response| {
-                                        let message = RawMessage::try_from_response(response);
-                                        let _ = response_tx.send((client, message));
-                                        Ok(())
-                                    });
+                let future = future.and_then(move |response| {
+                    let message = RawMessage::try_from_response(response);
+                    let _ = response_tx.send((client, message));
+                    Ok(())
+                });
                 self.spawner.spawn(future);
                 Ok(())
             }
@@ -79,10 +80,11 @@ impl<T, H> BaseServerLoop<T, H>
     }
 }
 impl<T, H> Future for BaseServerLoop<T, H>
-    where T: Transport,
-          H: HandleMessage,
-          H::HandleCall: Send + 'static,
-          H::HandleCast: Send + 'static
+where
+    T: Transport,
+    H: HandleMessage,
+    H::HandleCall: Send + 'static,
+    H::HandleCast: Send + 'static,
 {
     type Item = ();
     type Error = Error;
@@ -111,9 +113,11 @@ impl<T, H> Future for BaseServerLoop<T, H>
                     do_something = true;
                     let started = track_try!(self.transport.start_send((client, message, None)));
                     if let AsyncSink::NotReady((client, message, _)) = started {
-                        let e = track!(ErrorKind::Full.error(),
-                                       "Cannot response to transaction {:?}",
-                                       message.transaction_id());
+                        let e = track!(
+                            ErrorKind::Full.error(),
+                            "Cannot response to transaction {:?}",
+                            message.transaction_id()
+                        );
                         self.handler.handle_error(client, e);
                     }
                 }

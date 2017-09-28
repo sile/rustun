@@ -43,16 +43,18 @@ pub trait HandleMessage {
     fn on_init(&mut self, info_tx: mpsc::Sender<Self::Info>, indication_tx: IndicationSender) {}
 
     /// Handles the request/response transaction issued by `client`.
-    fn handle_call(&mut self,
-                   client: SocketAddr,
-                   message: Request<Self::Method, Self::Attribute>)
-                   -> Self::HandleCall;
+    fn handle_call(
+        &mut self,
+        client: SocketAddr,
+        message: Request<Self::Method, Self::Attribute>,
+    ) -> Self::HandleCall;
 
     /// Handles the indication transaction issued by `client`.
-    fn handle_cast(&mut self,
-                   client: SocketAddr,
-                   message: Indication<Self::Method, Self::Attribute>)
-                   -> Self::HandleCast;
+    fn handle_cast(
+        &mut self,
+        client: SocketAddr,
+        message: Indication<Self::Method, Self::Attribute>,
+    ) -> Self::HandleCast;
 
     /// Handles the error occurred while processing a transaction issued by `client`.
     fn handle_error(&mut self, client: SocketAddr, error: Error);
@@ -74,11 +76,14 @@ impl IndicationSender {
 
     /// Sends the indication message to `peer`.
     pub fn send<M, A>(&self, peer: SocketAddr, indication: Indication<M, A>) -> Result<()>
-        where M: Method,
-              A: Attribute
+    where
+        M: Method,
+        A: Attribute,
     {
         let message = track_try!(RawMessage::try_from_indication(indication));
-        track_try!(self.inner_tx.send((peer, Ok(message))).map_err(|_| ErrorKind::Other));
+        track_try!(self.inner_tx.send((peer, Ok(message))).map_err(
+            |_| ErrorKind::Other,
+        ));
         Ok(())
     }
 }

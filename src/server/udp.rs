@@ -29,8 +29,9 @@ impl UdpServer {
 
     /// Starts the UDP server with `handler`.
     pub fn start<S, H>(&self, spawner: S, handler: H) -> UdpServerLoop<H>
-        where S: Spawn + Send + 'static,
-              H: HandleMessage
+    where
+        S: Spawn + Send + 'static,
+        H: HandleMessage,
     {
         let transport = self.builder.finish();
         BaseServer::start(spawner, transport, handler)

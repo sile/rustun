@@ -137,11 +137,12 @@ pub struct RawMessage {
 }
 impl RawMessage {
     /// Makes a new `RawMessage` instance.
-    pub fn new(class: Class,
-               method: U12,
-               transaction_id: TransactionId,
-               attributes: Vec<RawAttribute>)
-               -> Self {
+    pub fn new(
+        class: Class,
+        method: U12,
+        transaction_id: TransactionId,
+        attributes: Vec<RawAttribute>,
+    ) -> Self {
         RawMessage {
             class: class,
             method: method,
@@ -202,10 +203,12 @@ impl RawMessage {
             track_try!(attr.write_to(&mut temp_writer));
         }
         let attrs_len = temp_writer.get_ref().len() - 20;
-        track_assert!(attrs_len < 0x10000,
-                      ErrorKind::Invalid,
-                      "Too large message length: actual={}, limit=0xFFFF",
-                      attrs_len);
+        track_assert!(
+            attrs_len < 0x10000,
+            ErrorKind::Invalid,
+            "Too large message length: actual={}, limit=0xFFFF",
+            attrs_len
+        );
         temp_writer.set_position(2);
         track_try!(temp_writer.write_u16be(attrs_len as u16));
 
@@ -219,16 +222,20 @@ impl RawMessage {
         let message_type = track_try!(reader.read_u16be());
         let message_type = track_try!(Type::from_u16(message_type));
         let message_len = track_try!(reader.read_u16be());
-        track_assert!(message_len % 4 == 0,
-                      ErrorKind::Invalid,
-                      "Unexpected message length: {} % 4 != 0",
-                      message_len);
+        track_assert!(
+            message_len % 4 == 0,
+            ErrorKind::Invalid,
+            "Unexpected message length: {} % 4 != 0",
+            message_len
+        );
         let magic_cookie = track_try!(reader.read_u32be());
-        track_assert!(magic_cookie == MAGIC_COOKIE,
-                      ErrorKind::Invalid,
-                      "Unexpected magic cookie: actual={}, expected={}",
-                      magic_cookie,
-                      MAGIC_COOKIE);;
+        track_assert!(
+            magic_cookie == MAGIC_COOKIE,
+            ErrorKind::Invalid,
+            "Unexpected magic cookie: actual={}, expected={}",
+            magic_cookie,
+            MAGIC_COOKIE
+        );;
 
         let mut transaction_id: [u8; 12] = [0; 12];
         track_try!(reader.read_exact(&mut transaction_id));
@@ -239,10 +246,12 @@ impl RawMessage {
             let attr = track_try!(RawAttribute::read_from(&mut reader));
             attrs.push(attr);
         }
-        Ok(RawMessage::new(message_type.class,
-                           message_type.method,
-                           transaction_id,
-                           attrs))
+        Ok(RawMessage::new(
+            message_type.class,
+            message_type.method,
+            transaction_id,
+            attrs,
+        ))
     }
 
     /// Tries to convert into the corresponding request message.
@@ -270,8 +279,10 @@ impl RawMessage {
     /// Tries to convert into the corresponding responses message.
     pub fn try_into_response<M: Method, A: Attribute>(self) -> Result<Response<M, A>> {
         let class = self.class;
-        track_assert!(class == Class::SuccessResponse || class == Class::ErrorResponse,
-                      ErrorKind::Invalid);
+        track_assert!(
+            class == Class::SuccessResponse || class == Class::ErrorResponse,
+            ErrorKind::Invalid
+        );
         let (method, transaction_id, attrs) = track_try!(self.try_into());
         if class == Class::SuccessResponse {
             Ok(Ok(SuccessResponse {
@@ -290,43 +301,52 @@ impl RawMessage {
 
     /// Tries to convert from `Request` to `RawMessage`.
     pub fn try_from_request<M: Method, A: Attribute>(from: Request<M, A>) -> Result<Self> {
-        track_err!(Self::try_from(Class::Request,
-                                  from.method(),
-                                  *from.transaction_id(),
-                                  from.attributes()))
+        track_err!(Self::try_from(
+            Class::Request,
+            from.method(),
+            *from.transaction_id(),
+            from.attributes(),
+        ))
     }
 
     /// Tries to convert from `Indication` to `RawMessage`.
     pub fn try_from_indication<M: Method, A: Attribute>(from: Indication<M, A>) -> Result<Self> {
-        track_err!(Self::try_from(Class::Indication,
-                                  from.method(),
-                                  *from.transaction_id(),
-                                  from.attributes()))
+        track_err!(Self::try_from(
+            Class::Indication,
+            from.method(),
+            *from.transaction_id(),
+            from.attributes(),
+        ))
     }
 
     /// Tries to convert from `Response` to `RawMessage`.
     pub fn try_from_response<M: Method, A: Attribute>(from: Response<M, A>) -> Result<Self> {
         track_err!(match from {
             Ok(m) => {
-                Self::try_from(Class::SuccessResponse,
-                               m.method(),
-                               *m.transaction_id(),
-                               m.attributes())
+                Self::try_from(
+                    Class::SuccessResponse,
+                    m.method(),
+                    *m.transaction_id(),
+                    m.attributes(),
+                )
             }
             Err(m) => {
-                Self::try_from(Class::ErrorResponse,
-                               m.method(),
-                               *m.transaction_id(),
-                               m.attributes())
+                Self::try_from(
+                    Class::ErrorResponse,
+                    m.method(),
+                    *m.transaction_id(),
+                    m.attributes(),
+                )
             }
         })
     }
 
-    fn try_from<M: Method, A: Attribute>(class: Class,
-                                         method: &M,
-                                         transaction_id: TransactionId,
-                                         attributes: &[A])
-                                         -> Result<Self> {
+    fn try_from<M: Method, A: Attribute>(
+        class: Class,
+        method: &M,
+        transaction_id: TransactionId,
+        attributes: &[A],
+    ) -> Result<Self> {
         let mut m = RawMessage::new(class, method.as_u12(), transaction_id, Vec::new());
         for attr in attributes {
             let raw_attr = track_try!(attr.try_to_raw(&m));
@@ -434,18 +454,20 @@ impl Type {
         let class = self.class as u16;
         let method = self.method.as_u12().as_u16();
         ((method & 0b0000_0000_1111) << 0) | ((class & 0b01) << 4) |
-        ((method & 0b0000_0111_0000) << 5) | ((class & 0b10) << 7) |
-        ((method & 0b1111_1000_0000) << 9)
+            ((method & 0b0000_0111_0000) << 5) | ((class & 0b10) << 7) |
+            ((method & 0b1111_1000_0000) << 9)
     }
 
     pub fn from_u16(value: u16) -> Result<Self> {
-        track_assert!(value >> 14 == 0,
-                      ErrorKind::Invalid,
-                      "First two-bits of STUN message must be 0");
+        track_assert!(
+            value >> 14 == 0,
+            ErrorKind::Invalid,
+            "First two-bits of STUN message must be 0"
+        );
         let class = ((value >> 4) & 0b01) | ((value >> 7) & 0b10);
         let class = Class::from_u8(class as u8).unwrap();
         let method = (value & 0b0000_0000_1111) | ((value >> 1) & 0b0000_0111_0000) |
-                     ((value >> 2) & 0b1111_1000_0000);
+            ((value >> 2) & 0b1111_1000_0000);
         let method = U12::from_u16(method).unwrap();
         Ok(Type {
             class: class,

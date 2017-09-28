@@ -32,24 +32,28 @@ impl HandleMessage for BindingHandler {
     type HandleCall = BoxFuture<Response<Self::Method, Self::Attribute>, ()>;
     type HandleCast = BoxFuture<(), ()>;
     type Info = ();
-    fn handle_call(&mut self,
-                   client: SocketAddr,
-                   request: Request<Self::Method, Self::Attribute>)
-                   -> Self::HandleCall {
+    fn handle_call(
+        &mut self,
+        client: SocketAddr,
+        request: Request<Self::Method, Self::Attribute>,
+    ) -> Self::HandleCall {
         let mut response = request.into_success_response();
         response.add_attribute(XorMappedAddress::new(client));
         futures::finished(Ok(response)).boxed()
     }
-    fn handle_cast(&mut self,
-                   _client: SocketAddr,
-                   _message: Indication<Self::Method, Self::Attribute>)
-                   -> Self::HandleCast {
+    fn handle_cast(
+        &mut self,
+        _client: SocketAddr,
+        _message: Indication<Self::Method, Self::Attribute>,
+    ) -> Self::HandleCast {
         futures::finished(()).boxed()
     }
     fn handle_error(&mut self, client: SocketAddr, error: Error) {
-        warn!(self.logger,
-              "Cannot handle a message from the client {}: {}",
-              client,
-              error);
+        warn!(
+            self.logger,
+            "Cannot handle a message from the client {}: {}",
+            client,
+            error
+        );
     }
 }

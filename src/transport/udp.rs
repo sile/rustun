@@ -34,8 +34,9 @@ impl UdpTransportBuilder {
             socket: Err(bind_addr),
             rto: Duration::from_millis(constants::DEFAULT_RTO_MS),
             rto_cache_duration: Duration::from_millis(constants::DEFAULT_RTO_CACHE_DURATION_MS),
-            min_transaction_interval:
-                Duration::from_millis(constants::DEFAULT_MIN_TRANSACTION_INTERVAL_MS),
+            min_transaction_interval: Duration::from_millis(
+                constants::DEFAULT_MIN_TRANSACTION_INTERVAL_MS,
+            ),
             max_outstanding_transactions: constants::DEFAULT_MAX_OUTSTANDING_TRANSACTIONS,
             recv_buffer_size: constants::DEFAULT_MAX_MESSAGE_SIZE,
         }
@@ -43,7 +44,10 @@ impl UdpTransportBuilder {
 
     /// Makes a new `UdpTransportBuilder` instance with `socket`.
     pub fn with_socket(socket: UdpSocket) -> Self {
-        UdpTransportBuilder { socket: Ok(socket), ..Self::new() }
+        UdpTransportBuilder {
+            socket: Ok(socket),
+            ..Self::new()
+        }
     }
 
     /// Sets the bind address of this UDP socket.
@@ -191,7 +195,10 @@ impl UdpTransport {
     fn poll_bind_complete(&mut self) -> Result<()> {
         let next = match self.0 {
             UdpTransportInner::Binded { .. } => return Ok(()),
-            UdpTransportInner::Binding { ref mut bind, ref mut queue } => {
+            UdpTransportInner::Binding {
+                ref mut bind,
+                ref mut queue,
+            } => {
                 if let Async::Ready((mut sink, stream)) = track_try!(bind.poll()) {
                     for item in queue.drain(..) {
                         let started = track_try!(sink.start_send(item));
@@ -218,7 +225,10 @@ impl Sink for UdpTransport {
     type SinkError = Error;
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
         match self.0 {
-            UdpTransportInner::Binding { ref mut queue, ref bind } => {
+            UdpTransportInner::Binding {
+                ref mut queue,
+                ref bind,
+            } => {
                 if queue.len() >= bind.sink_params.max_outstanding_transactions {
                     Ok(AsyncSink::NotReady(item))
                 } else {
@@ -271,9 +281,9 @@ impl Stream for UdpMessageStream {
         if let Async::Ready((socket, buf, size, peer)) = polled {
             let result = track!(RawMessage::read_from(&mut &buf[..size]));
             let result = result.map_err(|e| {
-                                            let bytes = Vec::from(&buf[..size]);
-                                            ErrorKind::NotStun(bytes).takes_over(e)
-                                        });
+                let bytes = Vec::from(&buf[..size]);
+                ErrorKind::NotStun(bytes).takes_over(e)
+            });
             self.0 = socket.recv_from(buf);
             Ok(Async::Ready(Some((peer, result))))
         } else {
@@ -308,17 +318,19 @@ impl UdpMessageSink {
         }
     }
     fn drop_rto_cache_if_expired(&mut self) {
-        if self.rto_cache.as_ref().map_or(false, |c| c.expiry_time <= SystemTime::now()) {
+        if self.rto_cache.as_ref().map_or(false, |c| {
+            c.expiry_time <= SystemTime::now()
+        })
+        {
             self.rto_cache = None;
         }
     }
     fn update_rto_cache_if_needed(&mut self, rto: Duration) {
         if self.rto_cache.as_ref().map_or(true, |c| c.rto < rto) {
             self.rto_cache = Some(RtoCache {
-                                      rto: rto,
-                                      expiry_time: SystemTime::now() +
-                                                   self.params.rto_cache_duration,
-                                  });
+                rto: rto,
+                expiry_time: SystemTime::now() + self.params.rto_cache_duration,
+            });
         }
     }
     fn calc_next_rto(&mut self, class: Class) -> Option<Duration> {
@@ -329,9 +341,10 @@ impl UdpMessageSink {
             None
         }
     }
-    fn calc_next_transaction_wait(&mut self,
-                                  class: Class)
-                                  -> Result<Option<(SystemTime, Timeout)>> {
+    fn calc_next_transaction_wait(
+        &mut self,
+        class: Class,
+    ) -> Result<Option<(SystemTime, Timeout)>> {
         if class == Class::SuccessResponse || class == Class::ErrorResponse {
             return Ok(None);
         }
@@ -433,12 +446,14 @@ impl fmt::Debug for UdpMessageSink {
             Either::A(ref a) => write!(f, "{:?}, ", a)?,
             Either::B(_) => write!(f, "BoxFuture {{ .. }}, ")?,
         }
-        write!(f,
-               "rto_cache: {:?}, last_transaction_start_time: {:?}, queue: {:?}, params: {:?} }}",
-               self.rto_cache,
-               self.last_transaction_start_time,
-               self.queue,
-               self.params)?;
+        write!(
+            f,
+            "rto_cache: {:?}, last_transaction_start_time: {:?}, queue: {:?}, params: {:?} }}",
+            self.rto_cache,
+            self.last_transaction_start_time,
+            self.queue,
+            self.params
+        )?;
         Ok(())
     }
 }
@@ -459,18 +474,20 @@ struct SendItem {
 }
 impl PartialOrd for SendItem {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        other.wait
-            .as_ref()
-            .map(|t| &t.0)
-            .partial_cmp(&self.wait.as_ref().map(|t| &t.0))
+        other.wait.as_ref().map(|t| &t.0).partial_cmp(
+            &self.wait.as_ref().map(
+                |t| &t.0,
+            ),
+        )
     }
 }
 impl Ord for SendItem {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
-        other.wait
-            .as_ref()
-            .map(|t| &t.0)
-            .cmp(&self.wait.as_ref().map(|t| &t.0))
+        other.wait.as_ref().map(|t| &t.0).cmp(
+            &self.wait.as_ref().map(
+                |t| &t.0,
+            ),
+        )
     }
 }
 impl PartialEq for SendItem {
