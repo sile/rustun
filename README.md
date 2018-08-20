@@ -2,7 +2,9 @@ rustun
 ======
 
 [![Crates.io: rustun](http://meritbadge.herokuapp.com/rustun)](https://crates.io/crates/rustun)
+[![Documentation](https://docs.rs/rustun/badge.svg)](https://docs.rs/rustun)
 [![Build Status](https://travis-ci.org/sile/rustun.svg?branch=master)](https://travis-ci.org/sile/rustun)
+[![Code Coverage](https://codecov.io/gh/sile/rustun/branch/master/graph/badge.svg)](https://codecov.io/gh/sile/rustun/branch/master)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A Rust library for implementing STUN server and client asynchronously.
