@@ -47,16 +47,16 @@
 #![warn(missing_docs)]
 
 extern crate crc;
-extern crate hmacsha1;
-extern crate md5;
-#[macro_use]
-extern crate slog;
 extern crate fibers;
 extern crate futures;
+extern crate handy_async;
+extern crate hmacsha1;
+extern crate md5;
 extern crate rand;
 #[macro_use]
+extern crate slog;
+#[macro_use]
 extern crate trackable;
-extern crate handy_async;
 
 macro_rules! track_try {
     ($expr:expr) => {

@@ -352,7 +352,7 @@ impl Attribute for ErrorCode {
             TYPE_ERROR_CODE,
             ErrorKind::Unsupported
         );
-        let mut reader = &mut attr.value();
+        let reader = &mut attr.value();
         let value = track_try!(reader.read_u32be());
         let class = (value >> 8) & 0b111;
         let number = value & 0b11111111;
@@ -405,7 +405,7 @@ impl Attribute for UnknownAttributes {
         );
         let count = attr.value().len() / 2;
         let mut unknowns = Vec::with_capacity(count);
-        let mut reader = &mut attr.value();
+        let reader = &mut attr.value();
         for _ in 0..count {
             let t = Type::new(track_try!(reader.read_u16be()));
             unknowns.push(t);
@@ -458,7 +458,7 @@ impl Attribute for Realm {
     }
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(), TYPE_REALM, ErrorKind::Unsupported);
-        let mut reader = &mut attr.value();
+        let reader = &mut attr.value();
         let text = track_try!(reader.read_all_string());
         track_assert!(text.chars().count() < 128, ErrorKind::Invalid);
         Ok(Self::new(text).unwrap())
@@ -505,7 +505,7 @@ impl Attribute for Nonce {
     }
     fn try_from_raw(attr: &RawAttribute, _message: &RawMessage) -> Result<Self> {
         track_assert_eq!(attr.get_type().as_u16(), TYPE_NONCE, ErrorKind::Unsupported);
-        let mut reader = &mut attr.value();
+        let reader = &mut attr.value();
         let value = track_try!(reader.read_all_string());
         track_assert!(value.chars().count() < 128, ErrorKind::Invalid);
         Ok(Self::new(value).unwrap())
@@ -556,7 +556,7 @@ impl Attribute for Fingerprint {
             ErrorKind::Unsupported
         );
         track_assert_eq!(attr.value().len(), 4, ErrorKind::Invalid);
-        let mut reader = &mut attr.value();
+        let reader = &mut attr.value();
         let crc32 = track_try!(reader.read_u32be());
 
         let expected = Self::from_message(message);
@@ -610,7 +610,7 @@ impl Attribute for Software {
             TYPE_SOFTWARE,
             ErrorKind::Unsupported
         );
-        let mut reader = &mut attr.value();
+        let reader = &mut attr.value();
         let description = track_try!(reader.read_all_string());
         track_assert!(description.chars().count() < 128, ErrorKind::Invalid);
         Ok(Self::new(description).unwrap())

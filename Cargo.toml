@@ -17,8 +17,8 @@ travis-ci = {repository = "sile/rustun"}
 crc = "1"
 md5 = "0.3"
 hmac-sha1 = "0.1"
-slog = "1"
-rand = "0.3"
+slog = "2"
+rand = "0.5"
 fibers = "0.1"
 futures = "0.1"
 trackable = "0.2"
@@ -26,4 +26,4 @@ handy_async = "0.2"
 
 [dev-dependencies]
 clap = "2"
-slog-term = "1"
+sloggers = "0.2"
