@@ -24,13 +24,13 @@
 //! > [RFC 5389 -- 3. Overview of Operation](https://tools.ietf.org/html/rfc5389#section-3)
 use rand;
 
-use {Method, Attribute, Error};
-use types::TransactionId;
-use method::{Requestable, Indicatable};
+use method::{Indicatable, Requestable};
 use rfc5389::attributes::ErrorCode;
+use types::TransactionId;
 use types::TryAsRef;
+use {Attribute, Error, Method};
 
-pub use self::raw::{RawMessage, Class};
+pub use self::raw::{Class, RawMessage};
 
 mod raw;
 
@@ -88,14 +88,14 @@ impl<M: Method, A: Attribute> Message for Response<M, A> {
     type Method = M;
     type Attribute = A;
     fn get_class(&self) -> Class {
-        self.as_ref().map(|r| r.get_class()).unwrap_or_else(
-            |r| r.get_class(),
-        )
+        self.as_ref()
+            .map(|r| r.get_class())
+            .unwrap_or_else(|r| r.get_class())
     }
     fn get_method(&self) -> &Self::Method {
-        self.as_ref().map(|r| r.get_method()).unwrap_or_else(
-            |r| r.get_method(),
-        )
+        self.as_ref()
+            .map(|r| r.get_method())
+            .unwrap_or_else(|r| r.get_method())
     }
     fn get_transaction_id(&self) -> &TransactionId {
         self.as_ref()
@@ -103,11 +103,9 @@ impl<M: Method, A: Attribute> Message for Response<M, A> {
             .unwrap_or_else(|r| r.get_transaction_id())
     }
     fn get_attributes(&self) -> &[Self::Attribute] {
-        self.as_ref().map(|r| r.get_attributes()).unwrap_or_else(
-            |r| {
-                r.get_attributes()
-            },
-        )
+        self.as_ref()
+            .map(|r| r.get_attributes())
+            .unwrap_or_else(|r| r.get_attributes())
     }
 }
 

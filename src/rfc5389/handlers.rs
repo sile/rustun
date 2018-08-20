@@ -1,12 +1,12 @@
 //! `HandleMessage` trait implementations.
-use std::net::SocketAddr;
-use slog::{self, Logger};
 use futures;
+use slog::{self, Logger};
+use std::net::SocketAddr;
 
-use {Error, HandleMessage, BoxFuture};
-use message::{Request, Response, Indication};
+use message::{Indication, Request, Response};
 use rfc5389;
 use rfc5389::attributes::XorMappedAddress;
+use {BoxFuture, Error, HandleMessage};
 
 /// A `HandleMessage` implementation which only handle `Binding` method.
 #[derive(Debug)]
@@ -16,7 +16,9 @@ pub struct BindingHandler {
 impl BindingHandler {
     /// Makes a new `BindingHandler` instance.
     pub fn new() -> Self {
-        BindingHandler { logger: Logger::root(slog::Discard, o!()) }
+        BindingHandler {
+            logger: Logger::root(slog::Discard, o!()),
+        }
     }
 
     /// Makes a new `BindingHandler` instance with the speficied logger.
@@ -51,9 +53,7 @@ impl HandleMessage for BindingHandler {
     fn handle_error(&mut self, client: SocketAddr, error: Error) {
         warn!(
             self.logger,
-            "Cannot handle a message from the client {}: {}",
-            client,
-            error
+            "Cannot handle a message from the client {}: {}", client, error
         );
     }
 }

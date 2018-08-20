@@ -1,9 +1,9 @@
 //! STUN attribute related components.
-use std::io::{Read, Write};
 use handy_async::sync_io::{ReadExt, WriteExt};
+use std::io::{Read, Write};
 
-use Result;
 use message::RawMessage;
+use Result;
 
 /// STUN attribute.
 ///
@@ -30,9 +30,8 @@ pub trait Attribute: Sized {
     ///
     /// The resulting attribute will be added at the tail of the attribute of the `message`.
     fn try_to_raw(&self, message: &RawMessage) -> Result<RawAttribute> {
-        self.encode_value(message).map(|value| {
-            RawAttribute::new(self.get_type(), value)
-        })
+        self.encode_value(message)
+            .map(|value| RawAttribute::new(self.get_type(), value))
     }
 
     /// Tries to encode the value of this attribute to bytes.

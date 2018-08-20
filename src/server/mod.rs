@@ -1,25 +1,25 @@
 //! STUN server related components.
-use std::net::SocketAddr;
 use fibers::sync::mpsc;
 use futures::Future;
+use std::net::SocketAddr;
 
-use {Result, Method, Attribute, Error, ErrorKind};
-use message::{Indication, Request, Response, RawMessage};
+use message::{Indication, RawMessage, Request, Response};
+use {Attribute, Error, ErrorKind, Method, Result};
 
 pub use self::base::BaseServer;
-pub use self::udp::UdpServer;
 pub use self::tcp::TcpServer;
+pub use self::udp::UdpServer;
 
 pub mod futures {
     //! `Future` trait implementations.
     pub use super::base::BaseServerLoop;
-    pub use super::udp::UdpServerLoop;
     pub use super::tcp::TcpServerLoop;
+    pub use super::udp::UdpServerLoop;
 }
 
 mod base;
-mod udp;
 mod tcp;
+mod udp;
 
 /// This trait allows to handle transactions issued by clients.
 pub trait HandleMessage {
@@ -81,9 +81,11 @@ impl IndicationSender {
         A: Attribute,
     {
         let message = track_try!(RawMessage::try_from_indication(indication));
-        track_try!(self.inner_tx.send((peer, Ok(message))).map_err(
-            |_| ErrorKind::Other,
-        ));
+        track_try!(
+            self.inner_tx
+                .send((peer, Ok(message)),)
+                .map_err(|_| ErrorKind::Other,)
+        );
         Ok(())
     }
 }

@@ -4,9 +4,9 @@ extern crate rustun;
 
 use clap::{App, Arg};
 use fibers::{Executor, InPlaceExecutor, Spawn};
-use rustun::{Method, Client};
 use rustun::client::UdpClient;
 use rustun::rfc5389;
+use rustun::{Client, Method};
 
 fn main() {
     let matches = App::new("rustun_cli")
@@ -23,9 +23,9 @@ fn main() {
 
     let host = matches.value_of("HOST").unwrap();
     let port = matches.value_of("PORT").unwrap();
-    let addr = format!("{}:{}", host, port).parse().expect(
-        "Invalid UDP address",
-    );
+    let addr = format!("{}:{}", host, port)
+        .parse()
+        .expect("Invalid UDP address");
 
     let mut executor = InPlaceExecutor::new().unwrap();
     let mut client = UdpClient::new(&executor.handle(), addr);

@@ -1,7 +1,7 @@
 //! Traits that are used to represent STUN method.
-use Attribute;
+use message::{Indication, Request};
 use types::U12;
-use message::{Request, Indication};
+use Attribute;
 
 /// STUN method.
 ///

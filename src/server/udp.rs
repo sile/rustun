@@ -1,12 +1,12 @@
-use std::ops::{Deref, DerefMut};
-use std::net::SocketAddr;
-use fibers::Spawn;
 use fibers::net::UdpSocket;
+use fibers::Spawn;
+use std::net::SocketAddr;
+use std::ops::{Deref, DerefMut};
 
-use HandleMessage;
-use transport::{UdpTransport, UdpTransportBuilder};
-use server::BaseServer;
 use server::futures::BaseServerLoop;
+use server::BaseServer;
+use transport::{UdpTransport, UdpTransportBuilder};
+use HandleMessage;
 
 /// UDP STUN server.
 #[derive(Debug)]

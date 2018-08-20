@@ -1,21 +1,19 @@
-use std::net::SocketAddr;
-use fibers::Spawn;
-use fibers::net::TcpStream;
 use fibers::net::futures::Connect;
+use fibers::net::TcpStream;
+use fibers::Spawn;
 use futures::{Future, Poll};
+use std::net::SocketAddr;
 
-use {Client, Error};
-use transport::TcpClientTransport;
-use message::RawMessage;
 use super::BaseClient;
+use message::RawMessage;
+use transport::TcpClientTransport;
+use {Client, Error};
 
 /// `Future` that handle a request/response transaction issued by `TcpClient`.
-pub type TcpCallRaw =
-    <BaseClient<TcpClientTransport> as Client>::CallRaw;
+pub type TcpCallRaw = <BaseClient<TcpClientTransport> as Client>::CallRaw;
 
 /// `Future` that handle a indication transaction issued by `TcpClient`.
-pub type TcpCastRaw =
-    <BaseClient<TcpClientTransport> as Client>::CastRaw;
+pub type TcpCastRaw = <BaseClient<TcpClientTransport> as Client>::CastRaw;
 
 /// A [Client](trait.Client.html) trait implementation which
 /// uses [TcpClientTransport](../transport/struct.TcpClientTransport.html) as the transport layer.

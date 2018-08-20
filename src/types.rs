@@ -1,11 +1,11 @@
 //! Miscellaneous types.
-use std::io::{Read, Write};
-use std::net::{SocketAddr, IpAddr};
 use handy_async::sync_io::{ReadExt, WriteExt};
+use std::io::{Read, Write};
+use std::net::{IpAddr, SocketAddr};
 use trackable::error::ErrorKindExt;
 
-use {Result, ErrorKind};
 use constants;
+use {ErrorKind, Result};
 
 /// Unsigned 12 bit integer.
 #[derive(Debug, Default, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -133,7 +133,6 @@ impl SocketAddrValue {
         Ok(())
     }
 }
-
 
 /// An attempted cheap reference-to-reference conversion.
 pub trait TryAsRef<T> {

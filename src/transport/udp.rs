@@ -1,20 +1,20 @@
-use std::cmp;
-use std::fmt;
-use std::net::SocketAddr;
-use std::collections::{VecDeque, BinaryHeap};
-use std::time::{SystemTime, Duration};
+use fibers::net::futures::{RecvFrom, UdpSocketBind};
 use fibers::net::UdpSocket;
-use fibers::net::futures::{UdpSocketBind, RecvFrom};
 use fibers::sync::oneshot::Link;
 use fibers::time::timer::{self, Timeout};
-use futures::{Future, Stream, Poll, Async, StartSend, Sink, AsyncSink};
 use futures::future::Either;
+use futures::{Async, AsyncSink, Future, Poll, Sink, StartSend, Stream};
+use std::cmp;
+use std::collections::{BinaryHeap, VecDeque};
+use std::fmt;
+use std::net::SocketAddr;
+use std::time::{Duration, SystemTime};
 use trackable::error::ErrorKindExt;
 
-use {Result, Error, ErrorKind, BoxFuture};
-use message::{Class, RawMessage};
+use super::{MessageSink, MessageSinkItem, MessageStream, Transport};
 use constants;
-use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
+use message::{Class, RawMessage};
+use {BoxFuture, Error, ErrorKind, Result};
 
 /// `UdpTransport` builder.
 #[derive(Debug, Clone)]
@@ -171,16 +171,14 @@ impl UdpTransport {
             max_outstanding_transactions: builder.max_outstanding_transactions,
         };
         let inner = match builder.socket.clone() {
-            Err(bind_addr) => {
-                UdpTransportInner::Binding {
-                    bind: UdpTransportBind {
-                        future: UdpSocket::bind(bind_addr),
-                        recv_buffer_size: builder.recv_buffer_size,
-                        sink_params: sink_params,
-                    },
-                    queue: VecDeque::new(),
-                }
-            }
+            Err(bind_addr) => UdpTransportInner::Binding {
+                bind: UdpTransportBind {
+                    future: UdpSocket::bind(bind_addr),
+                    recv_buffer_size: builder.recv_buffer_size,
+                    sink_params: sink_params,
+                },
+                queue: VecDeque::new(),
+            },
             Ok(socket) => {
                 let sink = UdpMessageSink::new(socket.clone(), sink_params);
                 let stream = UdpMessageStream::new(socket, vec![0; builder.recv_buffer_size]);
@@ -318,9 +316,10 @@ impl UdpMessageSink {
         }
     }
     fn drop_rto_cache_if_expired(&mut self) {
-        if self.rto_cache.as_ref().map_or(false, |c| {
-            c.expiry_time <= SystemTime::now()
-        })
+        if self
+            .rto_cache
+            .as_ref()
+            .map_or(false, |c| c.expiry_time <= SystemTime::now())
         {
             self.rto_cache = None;
         }
@@ -449,10 +448,7 @@ impl fmt::Debug for UdpMessageSink {
         write!(
             f,
             "rto_cache: {:?}, last_transaction_start_time: {:?}, queue: {:?}, params: {:?} }}",
-            self.rto_cache,
-            self.last_transaction_start_time,
-            self.queue,
-            self.params
+            self.rto_cache, self.last_transaction_start_time, self.queue, self.params
         )?;
         Ok(())
     }
@@ -474,20 +470,20 @@ struct SendItem {
 }
 impl PartialOrd for SendItem {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        other.wait.as_ref().map(|t| &t.0).partial_cmp(
-            &self.wait.as_ref().map(
-                |t| &t.0,
-            ),
-        )
+        other
+            .wait
+            .as_ref()
+            .map(|t| &t.0)
+            .partial_cmp(&self.wait.as_ref().map(|t| &t.0))
     }
 }
 impl Ord for SendItem {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
-        other.wait.as_ref().map(|t| &t.0).cmp(
-            &self.wait.as_ref().map(
-                |t| &t.0,
-            ),
-        )
+        other
+            .wait
+            .as_ref()
+            .map(|t| &t.0)
+            .cmp(&self.wait.as_ref().map(|t| &t.0))
     }
 }
 impl PartialEq for SendItem {

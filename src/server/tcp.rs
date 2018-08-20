@@ -1,10 +1,10 @@
-use std::net::SocketAddr;
 use fibers::Spawn;
+use std::net::SocketAddr;
 
-use HandleMessage;
-use transport::TcpServerTransport;
-use server::BaseServer;
 use server::futures::BaseServerLoop;
+use server::BaseServer;
+use transport::TcpServerTransport;
+use HandleMessage;
 
 /// TCP STUN server.
 #[derive(Debug)]
@@ -14,7 +14,9 @@ pub struct TcpServer {
 impl TcpServer {
     /// Makes a new `TcpServer` instance which will bind to `bind_addr`.
     pub fn new(bind_addr: SocketAddr) -> Self {
-        TcpServer { bind_addr: bind_addr }
+        TcpServer {
+            bind_addr: bind_addr,
+        }
     }
 
     /// Starts the TCP server with `handler`.

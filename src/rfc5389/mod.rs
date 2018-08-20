@@ -1,13 +1,13 @@
 //! [RFC 5389](https://tools.ietf.org/html/rfc5389) specific components.
-use Result;
-use message::RawMessage;
 use attribute::{self, RawAttribute};
+use message::RawMessage;
 use types::{TryAsRef, U12};
+use Result;
 
-pub mod methods;
 pub mod attributes;
 pub mod errors;
 pub mod handlers;
+pub mod methods;
 
 /// Method set that are defined in [RFC 5389](https://tools.ietf.org/html/rfc5389).
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -41,7 +41,7 @@ macro_rules! impl_attr_from {
                 Attribute::$attr(f)
             }
         }
-    }
+    };
 }
 macro_rules! impl_attr_try_as_ref {
     ($attr:ident) => {
@@ -54,7 +54,7 @@ macro_rules! impl_attr_try_as_ref {
                 }
             }
         }
-    }
+    };
 }
 
 /// Attribute set that are defined in [RFC 5389](https://tools.ietf.org/html/rfc5389).

@@ -47,13 +47,13 @@
 #![warn(missing_docs)]
 
 extern crate crc;
-extern crate md5;
 extern crate hmacsha1;
+extern crate md5;
 #[macro_use]
 extern crate slog;
-extern crate rand;
 extern crate fibers;
 extern crate futures;
+extern crate rand;
 #[macro_use]
 extern crate trackable;
 extern crate handy_async;
@@ -61,31 +61,31 @@ extern crate handy_async;
 macro_rules! track_try {
     ($expr:expr) => {
         track!($expr.map_err(::Error::from))?
-    }
+    };
 }
 macro_rules! track_err {
     ($expr:expr) => {
         $expr.map_err(|e| track!(::Error::from(e)))
-    }
+    };
 }
 
-pub use error::{Error, ErrorKind};
-pub use client::Client;
-pub use server::HandleMessage;
-pub use method::Method;
 pub use attribute::Attribute;
+pub use client::Client;
+pub use error::{Error, ErrorKind};
+pub use method::Method;
+pub use server::HandleMessage;
 pub use transport::Transport;
 
-pub mod types;
-pub mod message;
-pub mod transport;
 pub mod attribute;
 pub mod constants;
+pub mod message;
 pub mod method;
 pub mod rfc5389;
+pub mod transport;
+pub mod types;
 
-mod error;
 pub mod client;
+mod error;
 pub mod server;
 
 /// A specialized `Result` type for this crate.

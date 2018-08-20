@@ -1,8 +1,8 @@
+use fibers::sync::oneshot::MonitorError;
 use std;
 use std::io;
 use std::sync::mpsc::RecvError;
-use trackable::error::{self, TrackableError, ErrorKindExt};
-use fibers::sync::oneshot::MonitorError;
+use trackable::error::{self, ErrorKindExt, TrackableError};
 
 use rfc5389::attributes::ErrorCode;
 use rfc5389::errors;

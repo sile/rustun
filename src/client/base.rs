@@ -1,24 +1,28 @@
+use fibers::sync::mpsc;
+use fibers::sync::oneshot::{self, Link, Monitor, Monitored};
+use fibers::time::timer::{self, Timeout};
+use fibers::Spawn;
+use futures::{Async, AsyncSink, Future, Poll, Stream};
+use std::collections::HashMap;
 use std::io;
+use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::collections::HashMap;
-use std::marker::PhantomData;
-use fibers::Spawn;
-use fibers::sync::mpsc;
-use fibers::sync::oneshot::{self, Monitor, Monitored, Link};
-use fibers::time::timer::{self, Timeout};
-use futures::{Future, Stream, Poll, Async, AsyncSink};
 use trackable::error::ErrorKindExt;
 
-use {Client, Transport, Error, ErrorKind, Result};
+use constants;
 use message::RawMessage;
 use types::TransactionId;
-use constants;
+use {Client, Error, ErrorKind, Result, Transport};
 
 #[derive(Debug)]
 enum Command {
     Cast(RawMessage, Link<(), Error, (), ()>),
-    Call(RawMessage, Link<(), Error, (), ()>, Monitored<RawMessage, Error>),
+    Call(
+        RawMessage,
+        Link<(), Error, (), ()>,
+        Monitored<RawMessage, Error>,
+    ),
     Abort(TransactionId),
 }
 
@@ -90,18 +94,22 @@ impl<T: Transport> BaseClientLoop<T> {
     fn handle_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::Cast(message, link) => {
-                let result = track_try!(self.transport.start_send(
-                    (self.server, message, Some(link)),
-                ));
+                let result = track_try!(self.transport.start_send((
+                    self.server,
+                    message,
+                    Some(link)
+                ),));
                 if let AsyncSink::NotReady((_, _, Some(link))) = result {
                     link.exit(track_err!(Err(ErrorKind::Full)));
                 }
             }
             Command::Call(message, link, monitored) => {
                 let transaction_id = message.transaction_id().clone();
-                let result = track_try!(self.transport.start_send(
-                    (self.server, message, Some(link)),
-                ));
+                let result = track_try!(self.transport.start_send((
+                    self.server,
+                    message,
+                    Some(link)
+                ),));
                 if let AsyncSink::NotReady((_, _, Some(link))) = result {
                     link.exit(track_err!(Err(ErrorKind::Full)));
                 } else {
@@ -125,33 +133,32 @@ impl<T: Transport> Future for BaseClientLoop<T> {
     type Error = ();
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         let result = (|| loop {
-                          let no_transaction = track_try!(self.transport.poll_complete())
-                              .is_ready();
-                          if !no_transaction {
-                              match track_try!(self.transport.poll()) {
-                                  Async::NotReady => {}
-                                  Async::Ready(None) => return track_err!(Err(disconnected())),
-                                  Async::Ready(Some((peer, message))) => {
-                                      match message {
-                                          Ok(message) => {
-                                              self.handle_message(peer, message);
-                                          }
-                                          Err(e) => {
-                                              // TODO: logging
-                                              println!("Error(from '{}'): {}", peer, e);
-                                          }
-                                      }
-                                  }
-                              }
-                          }
-                          match track_try!(self.command_rx.poll().map_err(|()| ErrorKind::Other)) {
-                              Async::NotReady => return Ok(Async::NotReady),
-                              Async::Ready(None) => return Ok(Async::Ready(())),
-                              Async::Ready(Some(command)) => {
-                                  track_try!(self.handle_command(command));
-                              }
-                          }
-                      })();
+            let no_transaction = track_try!(self.transport.poll_complete()).is_ready();
+            if !no_transaction {
+                match track_try!(self.transport.poll()) {
+                    Async::NotReady => {}
+                    Async::Ready(None) => return track_err!(Err(disconnected())),
+                    Async::Ready(Some((peer, message))) => {
+                        match message {
+                            Ok(message) => {
+                                self.handle_message(peer, message);
+                            }
+                            Err(e) => {
+                                // TODO: logging
+                                println!("Error(from '{}'): {}", peer, e);
+                            }
+                        }
+                    }
+                }
+            }
+            match track_try!(self.command_rx.poll().map_err(|()| ErrorKind::Other)) {
+                Async::NotReady => return Ok(Async::NotReady),
+                Async::Ready(None) => return Ok(Async::Ready(())),
+                Async::Ready(Some(command)) => {
+                    track_try!(self.handle_command(command));
+                }
+            }
+        })();
         result.map_err(|e| {
             self.handle_error(e);
             ()
@@ -172,9 +179,9 @@ impl BaseCallRaw {
         let transaction_id = message.transaction_id().clone();
         let (link0, link1) = oneshot::link();
         let (monitored, monitor) = oneshot::monitor();
-        let _ = client.command_tx.send(
-            Command::Call(message, link1, monitored),
-        );
+        let _ = client
+            .command_tx
+            .send(Command::Call(message, link1, monitored));
         BaseCallRaw {
             transaction_id: transaction_id,
             _link: link0,

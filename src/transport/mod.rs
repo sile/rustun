@@ -1,16 +1,16 @@
 //! STUN message transport layer.
-use std::net::SocketAddr;
 use fibers::sync::oneshot::Link;
 use futures::{Sink, Stream};
+use std::net::SocketAddr;
 
-use {Result, Error};
 use message::RawMessage;
+use {Error, Result};
 
-pub use self::udp::{UdpTransportBuilder, UdpTransport};
 pub use self::tcp::{TcpClientTransport, TcpServerTransport};
+pub use self::udp::{UdpTransport, UdpTransportBuilder};
 
-mod udp;
 mod tcp;
+mod udp;
 
 /// The type of `SinkItem` of [MessageSink](trait.MessageSink.html).
 ///
@@ -28,9 +28,7 @@ pub trait MessageSink: Sink<SinkItem = MessageSinkItem, SinkError = Error> {}
 
 /// A marker trait representing that the implementation can be used as
 /// the receiving side of message transport layer.
-pub trait MessageStream
-    : Stream<Item = (SocketAddr, Result<RawMessage>), Error = Error> {
-}
+pub trait MessageStream: Stream<Item = (SocketAddr, Result<RawMessage>), Error = Error> {}
 
 /// A marker trait representing that the implementation can be used as message transport layer.
 pub trait Transport: MessageSink + MessageStream {}

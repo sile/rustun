@@ -1,10 +1,10 @@
-use std::net::SocketAddr;
 use fibers::Spawn;
+use std::net::SocketAddr;
 
-use Client;
-use transport::UdpTransport;
-use message::RawMessage;
 use super::BaseClient;
+use message::RawMessage;
+use transport::UdpTransport;
+use Client;
 
 /// `Future` that handle a request/response transaction issued by `UdpClient`.
 pub type UdpCallRaw = <BaseClient<UdpTransport> as Client>::CallRaw;

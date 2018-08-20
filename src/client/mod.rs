@@ -1,25 +1,25 @@
 //! STUN client related components.
-use futures::{failed, Future};
 use futures::future::Either;
+use futures::{failed, Future};
 
-use {Method, Attribute, Error};
-use message::{Indication, Request, RawMessage};
+use message::{Indication, RawMessage, Request};
+use {Attribute, Error, Method};
 
 pub use self::base::BaseClient;
-pub use self::udp::UdpClient;
 pub use self::tcp::TcpClient;
+pub use self::udp::UdpClient;
 
 pub mod futures {
     //! `Future` trait implementations.
-    pub use super::futures_impl::{Call, Cast};
     pub use super::base::{BaseCallRaw, BaseCastRaw};
+    pub use super::futures_impl::{Call, Cast};
+    pub use super::tcp::{InitTcpClient, TcpCallRaw, TcpCastRaw};
     pub use super::udp::{UdpCallRaw, UdpCastRaw};
-    pub use super::tcp::{TcpCallRaw, TcpCastRaw, InitTcpClient};
 }
 
 mod base;
-mod udp;
 mod tcp;
+mod udp;
 
 /// STUN client.
 pub trait Client {
@@ -63,13 +63,13 @@ pub trait Client {
 }
 
 mod futures_impl {
+    use futures::future::{Either, Failed};
+    use futures::{Async, Future, Poll};
     use std::fmt;
     use std::marker::PhantomData;
-    use futures::{Future, Poll, Async};
-    use futures::future::{Either, Failed};
 
-    use {Method, Attribute, Error};
-    use message::{Response, RawMessage};
+    use message::{RawMessage, Response};
+    use {Attribute, Error, Method};
 
     pub fn cast<F>(future: Either<Failed<(), Error>, F>) -> Cast<F> {
         Cast(future)

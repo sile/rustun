@@ -1,8 +1,8 @@
 //! Individual definition of the methods that are defined in [RFC 5389]
 //! (https://tools.ietf.org/html/rfc5389).
-use Method;
 use method;
 use types::U12;
+use Method;
 
 /// The codepoint of the [Binding](struct.Binding.html) method.
 pub const METHOD_BINDING: u16 = 0x0001;

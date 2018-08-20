@@ -1,24 +1,24 @@
-use std::io;
-use std::fmt;
-use std::net::SocketAddr;
-use std::collections::{VecDeque, HashMap};
-use std::sync::mpsc::SendError;
-use fibers::{Spawn, BoxSpawn};
-use fibers::net::{TcpStream, TcpListener};
-use fibers::net::futures::{TcpListenerBind, Connected};
+use fibers::net::futures::{Connected, TcpListenerBind};
 use fibers::net::streams::Incoming;
+use fibers::net::{TcpListener, TcpStream};
 use fibers::sync::mpsc;
 use fibers::sync::oneshot::Link;
-use futures::{Future, Async, Poll, Stream, Sink, AsyncSink, StartSend};
-use handy_async::io::{ReadFrom, AsyncWrite};
+use fibers::{BoxSpawn, Spawn};
+use futures::{Async, AsyncSink, Future, Poll, Sink, StartSend, Stream};
 use handy_async::io::futures::WriteAll;
-use handy_async::sync_io::ReadExt;
+use handy_async::io::{AsyncWrite, ReadFrom};
 use handy_async::pattern::{Pattern, Window};
+use handy_async::sync_io::ReadExt;
+use std::collections::{HashMap, VecDeque};
+use std::fmt;
+use std::io;
+use std::net::SocketAddr;
+use std::sync::mpsc::SendError;
 use trackable::error::ErrorKindExt;
 
-use {Result, Error, ErrorKind, BoxFuture};
+use super::{MessageSink, MessageSinkItem, MessageStream, Transport};
 use message::RawMessage;
-use super::{MessageStream, MessageSink, MessageSinkItem, Transport};
+use {BoxFuture, Error, ErrorKind, Result};
 
 #[derive(Debug)]
 enum OutgoingCommand {
@@ -319,7 +319,6 @@ impl Sink for TcpMessageSink {
                 Err(e)
             }
             Ok(v) => Ok(v),
-
         }
     }
 }

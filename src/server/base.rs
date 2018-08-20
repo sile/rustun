@@ -1,13 +1,13 @@
-use std::net::SocketAddr;
-use fibers::{Spawn, BoxSpawn};
 use fibers::sync::mpsc;
-use futures::{Future, Poll, Async, Stream, AsyncSink};
+use fibers::{BoxSpawn, Spawn};
+use futures::{Async, AsyncSink, Future, Poll, Stream};
+use std::net::SocketAddr;
 use trackable::error::ErrorKindExt;
 
-use {Result, Error, HandleMessage, ErrorKind};
+use super::IndicationSender;
 use message::{Class, RawMessage};
 use transport::Transport;
-use super::IndicationSender;
+use {Error, ErrorKind, HandleMessage, Result};
 
 /// Base STUN server that can be used as base of other implementations.
 #[derive(Debug)]
