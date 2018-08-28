@@ -3,13 +3,9 @@ use bytecodec::bytes::{BytesDecoder, BytesEncoder};
 use bytecodec::fixnum::{U16beDecoder, U16beEncoder, U8Decoder, U8Encoder};
 use bytecodec::tuple::{TupleDecoder, TupleEncoder};
 use bytecodec::{self, Decode, DecodeExt, Encode, EncodeExt};
-use handy_async::sync_io::{ReadExt, WriteExt};
-use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use trackable::error::ErrorKindExt;
 
 use constants;
-use {ErrorKind, Result};
 
 /// Unsigned 12 bit integer.
 #[derive(Debug, Default, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -95,30 +91,6 @@ impl SocketAddrValue {
         Self::new(xor_addr)
     }
 
-    // TODO
-    /// Reads a `SocketAddrValue` instance from `reader`.
-    pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
-        let _ = track_try!(reader.read_u8());
-        let family = track_try!(reader.read_u8());
-        let port = track_try!(reader.read_u16be());
-        let ip = match family {
-            1 => {
-                let ip = track_try!(reader.read_u32be());
-                IpAddr::V4(From::from(ip))
-            }
-            2 => {
-                let mut octets = [0; 16];
-                track_try!(reader.read_exact(&mut octets[..]));
-                IpAddr::V6(From::from(octets))
-            }
-            _ => {
-                let message = format!("Unsupported address family: {}", family);
-                return Err(ErrorKind::Unsupported.cause(message).into());
-            }
-        };
-        Ok(Self::new(SocketAddr::new(ip, port)))
-    }
-
     /// Returns a decoder of `SocketAddrValue`.
     pub fn decoder() -> impl Decode<Item = Self> {
         let base: TupleDecoder<(U8Decoder, U8Decoder, U16beDecoder)> = Default::default();
@@ -144,26 +116,6 @@ impl SocketAddrValue {
                 SocketAddrValue(SocketAddr::new(ip, port))
             })
         })
-    }
-
-    // TODO: remove
-    /// Writes the socket address of this instance to `writer`.
-    pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        let addr = self.0;
-        track_try!(writer.write_u8(0));
-        match addr.ip() {
-            IpAddr::V4(ip) => {
-                track_try!(writer.write_u8(1));
-                track_try!(writer.write_u16be(addr.port()));
-                track_try!(writer.write_all(&ip.octets()));
-            }
-            IpAddr::V6(ip) => {
-                track_try!(writer.write_u8(2));
-                track_try!(writer.write_u16be(addr.port()));
-                track_try!(writer.write_all(&ip.octets()));
-            }
-        }
-        Ok(())
     }
 
     /// Returns an encoder of `SocketAddrValue`.

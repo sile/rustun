@@ -1,5 +1,6 @@
 //! Individual Definition of the attributes that are defined in [RFC 5389]
 //! (https://tools.ietf.org/html/rfc5389).
+use bytecodec::{DecodeExt, EncodeExt};
 use crc::crc32;
 use handy_async::sync_io::{ReadExt, WriteExt};
 use hmacsha1;
@@ -75,12 +76,12 @@ impl Attribute for MappedAddress {
             TYPE_MAPPED_ADDRESS,
             ErrorKind::Unsupported
         );
-        let addr = track_try!(SocketAddrValue::read_from(&mut attr.value()));
+        let addr = track!(SocketAddrValue::decoder().decode_from_bytes(&mut attr.value()))?;
         Ok(Self::new(addr.address()))
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        track_try!(SocketAddrValue::new(self.0).write_to(&mut buf));
+        let buf =
+            track!(SocketAddrValue::encoder().encode_into_bytes(SocketAddrValue::new(self.0)))?;
         Ok(buf)
     }
 }
@@ -112,12 +113,12 @@ impl Attribute for AlternateServer {
             TYPE_ALTERNATE_SERVER,
             ErrorKind::Unsupported
         );
-        let addr = track_try!(SocketAddrValue::read_from(&mut attr.value()));
+        let addr = track!(SocketAddrValue::decoder().decode_from_bytes(&mut attr.value()))?;
         Ok(Self::new(addr.address()))
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        track_try!(SocketAddrValue::new(self.0).write_to(&mut buf));
+        let buf =
+            track!(SocketAddrValue::encoder().encode_into_bytes(SocketAddrValue::new(self.0)))?;
         Ok(buf)
     }
 }
@@ -647,14 +648,13 @@ impl Attribute for XorMappedAddress {
             TYPE_XOR_MAPPED_ADDRESS,
             ErrorKind::Unsupported
         );
-        let xor_addr = track_try!(SocketAddrValue::read_from(&mut attr.value()));
+        let xor_addr = track!(SocketAddrValue::decoder().decode_from_bytes(&mut attr.value()))?;
         let addr = xor_addr.xor(message.transaction_id()).address();
         Ok(Self::new(addr))
     }
     fn encode_value(&self, message: &RawMessage) -> Result<Vec<u8>> {
         let xor_addr = SocketAddrValue::new(self.0).xor(message.transaction_id());
-        let mut buf = Vec::new();
-        track_try!(xor_addr.write_to(&mut buf));
+        let buf = track!(SocketAddrValue::encoder().encode_into_bytes(xor_addr))?;
         Ok(buf)
     }
 }

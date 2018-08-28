@@ -1,6 +1,11 @@
 //! STUN attribute related components.
-use handy_async::sync_io::{ReadExt, WriteExt};
-use std::io::{Read, Write};
+use bytecodec::bytes::BytesEncoder;
+use bytecodec::fixnum::U16beEncoder;
+use bytecodec::slice::OwnedSlice;
+use bytecodec::tuple::TupleEncoder;
+use bytecodec::{Encode, EncodeExt};
+use handy_async::sync_io::ReadExt;
+use std::io::Read;
 
 use message::RawMessage;
 use Result;
@@ -165,13 +170,28 @@ impl RawAttribute {
         })
     }
 
-    /// Writes the binary format of this attribute to `writer`.
-    pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        track_try!(writer.write_u16be(self.attr_type.as_u16()));
-        track_try!(writer.write_u16be(self.value.len() as u16));
-        track_try!(writer.write_all(&self.value));
-        track_try!(writer.write_all(self.padding()));
-        Ok(())
+    /// Returns an encoder of `RawAttribute`.
+    pub fn encoder() -> impl Encode<Item = Self> {
+        let base: TupleEncoder<(
+            U16beEncoder,
+            U16beEncoder,
+            BytesEncoder<_>,
+            BytesEncoder<_>,
+        )> = Default::default();
+        base.map_from(|item: RawAttribute| {
+            let padding_len = item.padding().len();
+            (
+                item.attr_type.as_u16(),
+                item.value.len() as u16,
+                item.value,
+                OwnedSlice::new(item.padding, 0, padding_len),
+            )
+        })
+    }
+
+    /// Returns the number of bytes required to encode this instance.
+    pub fn encoded_size(&self) -> usize {
+        2 + 2 + self.value.len() + self.padding().len()
     }
 }
 impl Attribute for RawAttribute {
@@ -183,5 +203,18 @@ impl Attribute for RawAttribute {
     }
     fn encode_value(&self, _message: &RawMessage) -> Result<Vec<u8>> {
         Ok(self.value.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raw_attribute_encoder_works() {
+        let mut encoder = RawAttribute::encoder();
+        let attr = RawAttribute::new(Type(36), vec![110, 0, 1, 255]);
+        let bytes = encoder.encode_into_bytes(attr).unwrap();
+        assert_eq!(bytes, [0, 36, 0, 4, 110, 0, 1, 255]);
     }
 }

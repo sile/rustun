@@ -1,3 +1,5 @@
+use bytecodec::io::IoEncodeExt;
+use bytecodec::Encode;
 use handy_async::sync_io::{ReadExt, WriteExt};
 use std::io::{self, Read, Write};
 use std::mem;
@@ -199,9 +201,13 @@ impl RawMessage {
         track_try!(temp_writer.write_u16be(0)); // dummy length
         track_try!(temp_writer.write_u32be(MAGIC_COOKIE));
         track_try!(temp_writer.write_all(&self.transaction_id));
+
+        let mut encoder = RawAttribute::encoder();
         for attr in self.attributes.iter() {
-            track_try!(attr.write_to(&mut temp_writer));
+            track!(encoder.start_encoding(attr.clone()))?;
+            track!(encoder.encode_all(&mut temp_writer))?;
         }
+
         let attrs_len = temp_writer.get_ref().len() - 20;
         track_assert!(
             attrs_len < 0x10000,
