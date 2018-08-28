@@ -1,7 +1,11 @@
 //! Miscellaneous types.
+use bytecodec::bytes::{BytesDecoder, BytesEncoder};
+use bytecodec::fixnum::{U16beDecoder, U16beEncoder, U8Decoder, U8Encoder};
+use bytecodec::tuple::{TupleDecoder, TupleEncoder};
+use bytecodec::{self, Decode, DecodeExt, Encode, EncodeExt};
 use handy_async::sync_io::{ReadExt, WriteExt};
 use std::io::{Read, Write};
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use trackable::error::ErrorKindExt;
 
 use constants;
@@ -91,6 +95,7 @@ impl SocketAddrValue {
         Self::new(xor_addr)
     }
 
+    // TODO
     /// Reads a `SocketAddrValue` instance from `reader`.
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
         let _ = track_try!(reader.read_u8());
@@ -114,6 +119,34 @@ impl SocketAddrValue {
         Ok(Self::new(SocketAddr::new(ip, port)))
     }
 
+    /// Returns a decoder of `SocketAddrValue`.
+    pub fn decoder() -> impl Decode<Item = Self> {
+        let base: TupleDecoder<(U8Decoder, U8Decoder, U16beDecoder)> = Default::default();
+        base.try_map(|(_, family, port)| -> bytecodec::Result<_> {
+            track_assert!(
+                family == 1 || family == 2,
+                bytecodec::ErrorKind::InvalidInput,
+                "Unsupported address family: {}",
+                family
+            );
+            Ok((family, port))
+        }).and_then(|(family, port)| {
+            let ip = match family {
+                1 => BytesDecoder::new(IpBytes::V4([0; 4])),
+                2 => BytesDecoder::new(IpBytes::V6([0; 16])),
+                _ => unreachable!(),
+            };
+            ip.map(move |ip| {
+                let ip = match ip {
+                    IpBytes::V4(bytes) => IpAddr::from(Ipv4Addr::from(bytes)),
+                    IpBytes::V6(bytes) => IpAddr::from(Ipv6Addr::from(bytes)),
+                };
+                SocketAddrValue(SocketAddr::new(ip, port))
+            })
+        })
+    }
+
+    // TODO: remove
     /// Writes the socket address of this instance to `writer`.
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         let addr = self.0;
@@ -132,10 +165,89 @@ impl SocketAddrValue {
         }
         Ok(())
     }
+
+    /// Returns an encoder of `SocketAddrValue`.
+    pub fn encoder() -> impl Encode<Item = Self> {
+        let base: TupleEncoder<(U8Encoder, U8Encoder, U16beEncoder, BytesEncoder<IpBytes>)> =
+            Default::default();
+        base.map_from(|SocketAddrValue(addr)| {
+            let kind = if addr.ip().is_ipv4() { 1 } else { 2 };
+            (0, kind, addr.port(), IpBytes::new(addr.ip()))
+        })
+    }
 }
 
 /// An attempted cheap reference-to-reference conversion.
 pub trait TryAsRef<T> {
     /// Performs the conversion.
     fn try_as_ref(&self) -> Option<&T>;
+}
+
+enum IpBytes {
+    V4([u8; 4]),
+    V6([u8; 16]),
+}
+impl IpBytes {
+    fn new(ip: IpAddr) -> Self {
+        match ip {
+            IpAddr::V4(ip) => IpBytes::V4(ip.octets()),
+            IpAddr::V6(ip) => IpBytes::V6(ip.octets()),
+        }
+    }
+}
+impl AsRef<[u8]> for IpBytes {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            IpBytes::V4(bytes) => bytes,
+            IpBytes::V6(bytes) => bytes,
+        }
+    }
+}
+impl AsMut<[u8]> for IpBytes {
+    fn as_mut(&mut self) -> &mut [u8] {
+        match self {
+            IpBytes::V4(bytes) => bytes,
+            IpBytes::V6(bytes) => bytes,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn socket_addr_value_encoder_works() {
+        let mut encoder = SocketAddrValue::encoder();
+
+        let v4addr = "127.0.0.1:80".parse().unwrap();
+        let bytes = encoder
+            .encode_into_bytes(SocketAddrValue::new(v4addr))
+            .unwrap();
+        assert_eq!(bytes, [0, 1, 0, 80, 127, 0, 0, 1]);
+
+        let v6addr = "[::]:90".parse().unwrap();
+        let bytes = encoder
+            .encode_into_bytes(SocketAddrValue::new(v6addr))
+            .unwrap();
+        assert_eq!(
+            bytes,
+            [0, 2, 0, 90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn socket_addr_value_decoder_works() {
+        let mut decoder = SocketAddrValue::decoder();
+
+        let v4addr = decoder
+            .decode_from_bytes(&[0, 1, 0, 80, 127, 0, 0, 1])
+            .unwrap();
+        assert_eq!(v4addr.0.to_string(), "127.0.0.1:80");
+
+        let v6addr = decoder
+            .decode_from_bytes(&[0, 2, 0, 90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            .unwrap();
+        assert_eq!(v6addr.0.to_string(), "[::]:90");
+    }
 }

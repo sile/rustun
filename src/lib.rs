@@ -46,6 +46,7 @@
 //! ```
 #![warn(missing_docs)]
 
+extern crate bytecodec;
 extern crate crc;
 extern crate fibers;
 extern crate futures;
