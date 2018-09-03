@@ -55,6 +55,7 @@ extern crate md5;
 extern crate rand;
 #[macro_use]
 extern crate slog;
+extern crate stun_codec;
 #[macro_use]
 extern crate trackable;
 
