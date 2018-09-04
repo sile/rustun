@@ -256,43 +256,35 @@ where
     }
 }
 
+pub trait UdpTransport: Transport {}
+impl<D, E> UdpTransport for UdpTransporter<D, E>
+where
+    D: Decode + Default,
+    E: Encode + Default,
+{}
+
+pub trait TcpTransport: Transport {}
+impl<D, E> TcpTransport for TcpTransporter<D, E>
+where
+    D: Decode + Default,
+    E: Encode + Default,
+{}
+
+pub trait StunTransport<M, A>:
+    Transport<Decoder = MessageDecoder<M, A>, Encoder = MessageEncoder<M, A>>
+where
+    M: Method,
+    A: Attribute,
+{
+}
+impl<M, A> StunTransport<M, A> for UdpTransporter<MessageDecoder<M, A>, MessageEncoder<M, A>>
+where
+    M: Method,
+    A: Attribute,
+{}
+impl<M, A> StunTransport<M, A> for TcpTransporter<MessageDecoder<M, A>, MessageEncoder<M, A>>
+where
+    M: Method,
+    A: Attribute,
+{}
 // TODO: MaybeMessgeDecoder
-#[derive(Debug)]
-pub struct StunTransporter<M, A, T> {
-    inner: T,
-    _phantom: PhantomData<(M, A)>,
-}
-impl<M, A, T> StunTransporter<M, A, T>
-where
-    M: Method,
-    A: Attribute,
-    T: Transport<Decoder = MessageDecoder<M, A>, Encoder = MessageEncoder<M, A>>,
-{
-    pub fn new(inner: T) -> Self {
-        StunTransporter {
-            inner,
-            _phantom: PhantomData,
-        }
-    }
-}
-impl<M, A, T> Transport for StunTransporter<M, A, T>
-where
-    M: Method,
-    A: Attribute,
-    T: Transport<Decoder = MessageDecoder<M, A>, Encoder = MessageEncoder<M, A>>,
-{
-    type Decoder = MessageDecoder<M, A>;
-    type Encoder = MessageEncoder<M, A>;
-
-    fn send(&mut self, peer: SocketAddr, item: Message<M, A>) {
-        self.inner.send(peer, item);
-    }
-
-    fn recv(&mut self) -> Option<(SocketAddr, Message<M, A>)> {
-        self.inner.recv()
-    }
-
-    fn poll_finish(&mut self) -> Result<bool> {
-        track!(self.inner.poll_finish())
-    }
-}
