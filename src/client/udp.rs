@@ -2,7 +2,6 @@ use fibers::Spawn;
 use std::net::SocketAddr;
 
 use super::BaseClient;
-use message::RawMessage;
 use transport::UdpTransport;
 use Client;
 

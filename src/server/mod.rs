@@ -2,9 +2,10 @@
 use fibers::sync::mpsc;
 use futures::Future;
 use std::net::SocketAddr;
+use stun_codec::{Attribute, Method};
 
-use message::{Indication, RawMessage, Request, Response};
-use {Attribute, Error, ErrorKind, Method, Result};
+use message::{Indication, Request, Response};
+use {Error, ErrorKind, Result};
 
 pub use self::base::BaseServer;
 pub use self::tcp::TcpServer;

@@ -1,9 +1,10 @@
 //! STUN client related components.
 use futures::future::Either;
 use futures::{failed, Future};
+use stun_codec::{Attribute, Method};
 
-use message::{Indication, RawMessage, Request};
-use {Attribute, Error, Method};
+use message::{Indication, Request};
+use Error;
 
 pub use self::base::BaseClient;
 pub use self::tcp::TcpClient;
@@ -67,9 +68,10 @@ mod futures_impl {
     use futures::{Async, Future, Poll};
     use std::fmt;
     use std::marker::PhantomData;
+    use stun_codec::{Attribute, Method};
 
-    use message::{RawMessage, Response};
-    use {Attribute, Error, Method};
+    use message::Response;
+    use Error;
 
     pub fn cast<F>(future: Either<Failed<(), Error>, F>) -> Cast<F> {
         Cast(future)

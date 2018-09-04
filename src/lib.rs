@@ -46,50 +46,41 @@
 //! ```
 #![warn(missing_docs)]
 
-extern crate crc;
 extern crate fibers;
 extern crate futures;
-extern crate handy_async;
-extern crate hmacsha1;
-extern crate md5;
 extern crate rand;
-#[macro_use]
+// #[macro_use]
 extern crate slog;
 extern crate stun_codec;
 #[macro_use]
 extern crate trackable;
 
-macro_rules! track_try {
-    ($expr:expr) => {
-        track!($expr.map_err(::Error::from))?
-    };
-}
-macro_rules! track_err {
-    ($expr:expr) => {
-        $expr.map_err(|e| track!(::Error::from(e)))
-    };
-}
+// macro_rules! track_try {
+//     ($expr:expr) => {
+//         track!($expr.map_err(::Error::from))?
+//     };
+// }
+// macro_rules! track_err {
+//     ($expr:expr) => {
+//         $expr.map_err(|e| track!(::Error::from(e)))
+//     };
+// }
 
-pub use attribute::Attribute;
-pub use client::Client;
+// pub use client::Client;
 pub use error::{Error, ErrorKind};
-pub use method::Method;
-pub use server::HandleMessage;
-pub use transport::Transport;
+// pub use server::HandleMessage;
+// pub use transport::Transport;
 
-pub mod attribute;
 pub mod constants;
 pub mod message;
 pub mod method;
-pub mod rfc5389;
-pub mod transport;
-pub mod types;
+// pub mod transport;
 
-pub mod client;
+// pub mod client;
 mod error;
-pub mod server;
+// pub mod server;
 
 /// A specialized `Result` type for this crate.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
-type BoxFuture<T, E> = Box<futures::Future<Item = T, Error = E> + Send + 'static>;
+// type BoxFuture<T, E> = Box<futures::Future<Item = T, Error = E> + Send + 'static>;

@@ -17,7 +17,6 @@ use std::sync::mpsc::SendError;
 use trackable::error::ErrorKindExt;
 
 use super::{MessageSink, MessageSinkItem, MessageStream, Transport};
-use message::RawMessage;
 use {BoxFuture, Error, ErrorKind, Result};
 
 #[derive(Debug)]
@@ -338,6 +337,7 @@ impl TcpMessageStream {
         }
     }
     fn recv_message_bytes(stream: TcpStream) -> RecvMessageBytes {
+        // TODO:
         let pattern = vec![0; 20]
             .and_then(|mut buf| {
                 let message_len = (&mut &buf[2..4]).read_u16be().unwrap();

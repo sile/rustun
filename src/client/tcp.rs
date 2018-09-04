@@ -5,7 +5,6 @@ use futures::{Future, Poll};
 use std::net::SocketAddr;
 
 use super::BaseClient;
-use message::RawMessage;
 use transport::TcpClientTransport;
 use {Client, Error};
 

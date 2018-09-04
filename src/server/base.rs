@@ -5,7 +5,6 @@ use std::net::SocketAddr;
 use trackable::error::ErrorKindExt;
 
 use super::IndicationSender;
-use message::{Class, RawMessage};
 use transport::Transport;
 use {Error, ErrorKind, HandleMessage, Result};
 

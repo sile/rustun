@@ -3,7 +3,6 @@ use fibers::sync::oneshot::Link;
 use futures::{Sink, Stream};
 use std::net::SocketAddr;
 
-use message::RawMessage;
 use {Error, Result};
 
 pub use self::tcp::{TcpClientTransport, TcpServerTransport};

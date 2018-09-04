@@ -13,7 +13,6 @@ use trackable::error::ErrorKindExt;
 
 use super::{MessageSink, MessageSinkItem, MessageStream, Transport};
 use constants;
-use message::{Class, RawMessage};
 use {BoxFuture, Error, ErrorKind, Result};
 
 /// `UdpTransport` builder.

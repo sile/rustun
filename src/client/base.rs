@@ -8,11 +8,10 @@ use std::io;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::time::Duration;
+use stun_codec::TransactionId;
 use trackable::error::ErrorKindExt;
 
 use constants;
-use message::RawMessage;
-use types::TransactionId;
 use {Client, Error, ErrorKind, Result, Transport};
 
 #[derive(Debug)]
