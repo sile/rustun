@@ -44,8 +44,9 @@
 //!            attributes: [XorMappedAddress(XorMappedAddress(V4(127.0.0.1:61991)))]
 //!       })
 //! ```
-#![warn(missing_docs)]
+// #![warn(missing_docs)] TODO
 
+extern crate bytecodec;
 extern crate fibers;
 extern crate futures;
 extern crate rand;
@@ -69,12 +70,11 @@ extern crate trackable;
 // pub use client::Client;
 pub use error::{Error, ErrorKind};
 // pub use server::HandleMessage;
-// pub use transport::Transport;
 
 pub mod constants;
 pub mod message;
 pub mod method;
-// pub mod transport;
+pub mod transport;
 
 // pub mod client;
 mod error;

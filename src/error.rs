@@ -1,3 +1,4 @@
+use bytecodec;
 use fibers::sync::oneshot::MonitorError;
 use std;
 use std::io;
@@ -29,6 +30,12 @@ impl From<RecvError> for Error {
 impl From<std::time::SystemTimeError> for Error {
     fn from(f: std::time::SystemTimeError) -> Self {
         ErrorKind::Other.cause(f).into()
+    }
+}
+impl From<bytecodec::Error> for Error {
+    fn from(f: bytecodec::Error) -> Self {
+        // TODO:
+        ErrorKind::Other.takes_over(f).into()
     }
 }
 

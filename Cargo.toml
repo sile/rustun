@@ -15,6 +15,7 @@ travis-ci = {repository = "sile/rustun"}
 codecov = {repository = "sile/rustun"}
 
 [dependencies]
+bytecodec = "0.4"
 fibers = "0.1"
 futures = "0.1"
 rand = "0.5"
