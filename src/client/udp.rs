@@ -1,5 +1,4 @@
-use bytecodec::marker::Never;
-use futures::{Async, Future, Poll};
+use futures::{Async, Poll, Stream};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::net::SocketAddr;
@@ -12,7 +11,7 @@ use super::Client;
 use constants;
 use message::{ErrorResponse, Indication, Request, Response, SuccessResponse};
 use transport::{StunTransport, UdpTransport};
-use {AsyncReply, Error, ErrorKind, Result};
+use {AsyncReply, AsyncResult, Error, ErrorKind, Result};
 
 // TODO: UdpClientBuilder
 
@@ -80,15 +79,17 @@ where
         self.request_timeout = timeout;
     }
 
-    fn handle_message(&mut self, message: Message<M, A>) {
-        let t = if let Some(t) = self.transactions.remove(message.transaction_id()) {
-            t
-        } else {
-            return;
-        };
-        t.reply
-            .send(track!(self.make_response(t.request_method, message)));
-        self.handle_pending_request();
+    fn handle_message(&mut self, message: Message<M, A>) -> Option<Indication<M, A>> {
+        if message.class() == MessageClass::Indication {
+            return Some(Indication::from_message(message).expect("never fails"));
+        }
+
+        if let Some(t) = self.transactions.remove(message.transaction_id()) {
+            t.reply
+                .send(track!(self.make_response(t.request_method, message)));
+            self.handle_pending_request();
+        }
+        None
     }
 
     fn handle_timeout(&mut self, transaction_id: TransactionId) {
@@ -208,37 +209,42 @@ where
     A: Attribute,
     T: StunTransport<M, A> + UdpTransport,
 {
-    fn call_with_reply(&mut self, request: Request<M, A>, reply: AsyncReply<Response<M, A>>) {
+    fn call(&mut self, request: Request<M, A>) -> AsyncResult<Response<M, A>> {
+        let (tx, rx) = AsyncResult::new();
+
         let tid = request.transaction_id().clone();
         self.transactions.insert(
             tid.clone(),
             TransactionState {
                 request_method: request.method().clone(),
-                reply,
+                reply: tx,
                 started: false,
             },
         );
         self.timeout_queue
             .push(TimeoutEntry::Request(tid.clone()), self.request_timeout);
         self.start_transaction(request, true);
+        rx
     }
 
     fn cast(&mut self, indication: Indication<M, A>) {
         self.transporter.send(self.peer, indication.into_message());
     }
 }
-impl<M, A, T> Future for UdpClient<M, A, T>
+impl<M, A, T> Stream for UdpClient<M, A, T>
 where
     M: Method,
     A: Attribute,
     T: StunTransport<M, A> + UdpTransport,
 {
-    type Item = Never;
+    type Item = Indication<M, A>;
     type Error = Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         while let Some((_, message)) = self.transporter.recv() {
-            self.handle_message(message);
+            if let Some(indication) = self.handle_message(message) {
+                return Ok(Async::Ready(Some(indication)));
+            }
         }
 
         while let Some(entry) = self.poll_expired() {
@@ -256,9 +262,10 @@ where
         }
 
         if track!(self.transporter.poll_finish())? {
-            track_panic!(ErrorKind::Other, "TCP connection closed by peer");
+            Ok(Async::Ready(None))
+        } else {
+            Ok(Async::NotReady)
         }
-        Ok(Async::NotReady)
     }
 }
 

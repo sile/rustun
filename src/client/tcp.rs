@@ -1,5 +1,4 @@
-use bytecodec::marker::Never;
-use futures::{Async, Future, Poll};
+use futures::{Async, Poll, Stream};
 use std::collections::HashMap;
 use std::mem;
 use std::net::SocketAddr;
@@ -12,7 +11,7 @@ use super::Client;
 use constants;
 use message::{ErrorResponse, Indication, Request, Response, SuccessResponse};
 use transport::{StunTransport, TcpTransport};
-use {AsyncReply, Error, ErrorKind, Result};
+use {AsyncReply, AsyncResult, Error, ErrorKind, Result};
 
 // TODO: TcpClientBuidler
 
@@ -46,14 +45,15 @@ where
         self.request_timeout = timeout;
     }
 
-    fn handle_message(&mut self, message: Message<M, A>) {
-        let (request_method, reply) =
-            if let Some(value) = self.transactions.remove(message.transaction_id()) {
-                value
-            } else {
-                return;
-            };
-        reply.send(track!(self.make_response(request_method, message)));
+    fn handle_message(&mut self, message: Message<M, A>) -> Option<Indication<M, A>> {
+        if message.class() == MessageClass::Indication {
+            return Some(Indication::from_message(message).expect("never fails"));
+        }
+
+        if let Some((request_method, reply)) = self.transactions.remove(message.transaction_id()) {
+            reply.send(track!(self.make_response(request_method, message)));
+        }
+        None
     }
 
     fn handle_timeout(&mut self, transaction_id: TransactionId) {
@@ -97,15 +97,17 @@ where
     A: Attribute,
     T: StunTransport<M, A> + TcpTransport,
 {
-    fn call_with_reply(&mut self, request: Request<M, A>, reply: AsyncReply<Response<M, A>>) {
+    fn call(&mut self, request: Request<M, A>) -> AsyncResult<Response<M, A>> {
         let unused: SocketAddr = unsafe { mem::zeroed() };
+        let (tx, rx) = AsyncResult::new();
         self.transactions.insert(
             request.transaction_id().clone(),
-            (request.method().clone(), reply),
+            (request.method().clone(), tx),
         );
         self.timeout_queue
             .push(request.transaction_id().clone(), self.request_timeout);
         self.transporter.send(unused, request.into_message());
+        rx
     }
 
     fn cast(&mut self, indication: Indication<M, A>) {
@@ -113,18 +115,20 @@ where
         self.transporter.send(unused, indication.into_message());
     }
 }
-impl<M, A, T> Future for TcpClient<M, A, T>
+impl<M, A, T> Stream for TcpClient<M, A, T>
 where
     M: Method,
     A: Attribute,
     T: StunTransport<M, A> + TcpTransport,
 {
-    type Item = Never;
+    type Item = Indication<M, A>;
     type Error = Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         while let Some((_, message)) = self.transporter.recv() {
-            self.handle_message(message);
+            if let Some(indication) = self.handle_message(message) {
+                return Ok(Async::Ready(Some(indication)));
+            }
         }
 
         while let Some(id) = self.poll_expired() {
@@ -132,8 +136,9 @@ where
         }
 
         if track!(self.transporter.poll_finish())? {
-            track_panic!(ErrorKind::Other, "TCP connection closed by peer");
+            Ok(Async::Ready(None))
+        } else {
+            Ok(Async::NotReady)
         }
-        Ok(Async::NotReady)
     }
 }

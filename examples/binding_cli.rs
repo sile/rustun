@@ -32,9 +32,11 @@ fn main() {
 
     let response =
         UdpTransporter::bind("0.0.0.0:0".parse().unwrap()).and_then(move |transporter| {
-            let client = UdpClient::new(transporter, addr).into_handle(fibers_global::handle());
+            let mut client = UdpClient::new(transporter, addr);
             let request = Request::<_, rfc5389::Attribute>::new(rfc5389::methods::Binding);
-            client.call(request)
+            let future = client.call(request);
+            fibers_global::spawn(client.map(|_| ()).map_err(|e| panic!("{}", e)));
+            future
         });
     match fibers_global::execute(response) {
         Ok(v) => println!("OK: {:?}", v),

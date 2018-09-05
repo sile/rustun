@@ -72,7 +72,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug)]
 pub struct AsyncResult<T>(fibers::sync::oneshot::Monitor<T, Error>);
 impl<T> AsyncResult<T> {
-    pub fn new() -> (AsyncReply<T>, Self) {
+    fn new() -> (AsyncReply<T>, Self) {
         let (tx, rx) = fibers::sync::oneshot::monitor();
         (AsyncReply(tx), AsyncResult(rx))
     }
@@ -86,11 +86,10 @@ impl<T> futures::Future for AsyncResult<T> {
     }
 }
 
-// TODO: name
 #[derive(Debug)]
-pub struct AsyncReply<T>(fibers::sync::oneshot::Monitored<T, Error>);
+struct AsyncReply<T>(fibers::sync::oneshot::Monitored<T, Error>);
 impl<T> AsyncReply<T> {
-    pub fn send(self, result: Result<T>) {
+    fn send(self, result: Result<T>) {
         let _ = self.0.exit(result);
     }
 }
