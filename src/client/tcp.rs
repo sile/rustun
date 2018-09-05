@@ -12,7 +12,7 @@ use super::Client;
 use constants;
 use message::{ErrorResponse, Indication, Request, Response, SuccessResponse};
 use transport::{StunTransport, TcpTransport};
-use {AsyncReply, AsyncResult, Error, ErrorKind, Result};
+use {AsyncReply, Error, ErrorKind, Result};
 
 // TODO: TcpClientBuidler
 
@@ -97,17 +97,15 @@ where
     A: Attribute,
     T: StunTransport<M, A> + TcpTransport,
 {
-    fn call(&mut self, request: Request<M, A>) -> AsyncResult<Response<M, A>> {
+    fn call_with_reply(&mut self, request: Request<M, A>, reply: AsyncReply<Response<M, A>>) {
         let unused: SocketAddr = unsafe { mem::zeroed() };
-        let (tx, rx) = AsyncResult::new();
         self.transactions.insert(
             request.transaction_id().clone(),
-            (request.method().clone(), tx),
+            (request.method().clone(), reply),
         );
         self.timeout_queue
             .push(request.transaction_id().clone(), self.request_timeout);
         self.transporter.send(unused, request.into_message());
-        rx
     }
 
     fn cast(&mut self, indication: Indication<M, A>) {

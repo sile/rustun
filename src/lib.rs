@@ -56,17 +56,6 @@ extern crate stun_codec;
 #[macro_use]
 extern crate trackable;
 
-// macro_rules! track_try {
-//     ($expr:expr) => {
-//         track!($expr.map_err(::Error::from))?
-//     };
-// }
-// macro_rules! track_err {
-//     ($expr:expr) => {
-//         $expr.map_err(|e| track!(::Error::from(e)))
-//     };
-// }
-
 pub use error::{Error, ErrorKind};
 
 pub mod client;
@@ -83,7 +72,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug)]
 pub struct AsyncResult<T>(fibers::sync::oneshot::Monitor<T, Error>);
 impl<T> AsyncResult<T> {
-    fn new() -> (AsyncReply<T>, Self) {
+    pub fn new() -> (AsyncReply<T>, Self) {
         let (tx, rx) = fibers::sync::oneshot::monitor();
         (AsyncReply(tx), AsyncResult(rx))
     }
@@ -97,10 +86,11 @@ impl<T> futures::Future for AsyncResult<T> {
     }
 }
 
+// TODO: name
 #[derive(Debug)]
-struct AsyncReply<T>(fibers::sync::oneshot::Monitored<T, Error>);
+pub struct AsyncReply<T>(fibers::sync::oneshot::Monitored<T, Error>);
 impl<T> AsyncReply<T> {
-    fn send(self, result: Result<T>) {
+    pub fn send(self, result: Result<T>) {
         let _ = self.0.exit(result);
     }
 }

@@ -12,7 +12,7 @@ use super::Client;
 use constants;
 use message::{ErrorResponse, Indication, Request, Response, SuccessResponse};
 use transport::{StunTransport, UdpTransport};
-use {AsyncReply, AsyncResult, Error, ErrorKind, Result};
+use {AsyncReply, Error, ErrorKind, Result};
 
 // TODO: UdpClientBuilder
 
@@ -208,22 +208,19 @@ where
     A: Attribute,
     T: StunTransport<M, A> + UdpTransport,
 {
-    fn call(&mut self, request: Request<M, A>) -> AsyncResult<Response<M, A>> {
-        let (tx, rx) = AsyncResult::new();
-
+    fn call_with_reply(&mut self, request: Request<M, A>, reply: AsyncReply<Response<M, A>>) {
         let tid = request.transaction_id().clone();
         self.transactions.insert(
             tid.clone(),
             TransactionState {
                 request_method: request.method().clone(),
-                reply: tx,
+                reply,
                 started: false,
             },
         );
         self.timeout_queue
             .push(TimeoutEntry::Request(tid.clone()), self.request_timeout);
         self.start_transaction(request, true);
-        rx
     }
 
     fn cast(&mut self, indication: Indication<M, A>) {
