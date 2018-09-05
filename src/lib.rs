@@ -50,8 +50,6 @@ extern crate bytecodec;
 extern crate fibers;
 extern crate futures;
 extern crate rand;
-// #[macro_use]
-extern crate slog;
 extern crate stun_codec;
 #[macro_use]
 extern crate trackable;
@@ -61,10 +59,10 @@ pub use error::{Error, ErrorKind};
 pub mod client;
 pub mod constants;
 pub mod message;
+pub mod server;
 pub mod transport;
 
 mod error;
-// pub mod server;
 
 /// A specialized `Result` type for this crate.
 pub type Result<T> = ::std::result::Result<T, Error>;

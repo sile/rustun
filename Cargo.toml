@@ -19,11 +19,9 @@ bytecodec = "0.4"
 fibers = "0.1"
 futures = "0.1"
 rand = "0.5"
-slog = "2"
 stun_codec = "0.1"
 trackable = "0.2"
 
 [dev-dependencies]
 clap = "2"
 fibers_global = "0.1"
-sloggers = "0.2"
