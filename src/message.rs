@@ -29,7 +29,6 @@ use std;
 use stun_codec::rfc5389::attributes::ErrorCode;
 use stun_codec::{Attribute, Message, MessageClass, Method, TransactionId};
 
-use method::{IndicatableMethod, RequestableMethod};
 use {ErrorKind, Result};
 
 /// Response message.
@@ -38,7 +37,7 @@ pub type Response<M, A> = std::result::Result<SuccessResponse<M, A>, ErrorRespon
 /// Request message.
 #[derive(Debug, Clone)]
 pub struct Request<M, A>(Message<M, A>);
-impl<M: RequestableMethod, A: Attribute> Request<M, A> {
+impl<M: Method, A: Attribute> Request<M, A> {
     /// Makes a new request message.
     pub fn new(method: M) -> Self {
         Request(Message::new(
@@ -92,12 +91,12 @@ impl<M: RequestableMethod, A: Attribute> Request<M, A> {
         self.0
     }
 }
-impl<M: RequestableMethod, A: Attribute> AsRef<Message<M, A>> for Request<M, A> {
+impl<M: Method, A: Attribute> AsRef<Message<M, A>> for Request<M, A> {
     fn as_ref(&self) -> &Message<M, A> {
         &self.0
     }
 }
-impl<M: RequestableMethod, A: Attribute> AsMut<Message<M, A>> for Request<M, A> {
+impl<M: Method, A: Attribute> AsMut<Message<M, A>> for Request<M, A> {
     fn as_mut(&mut self) -> &mut Message<M, A> {
         &mut self.0
     }
@@ -106,7 +105,7 @@ impl<M: RequestableMethod, A: Attribute> AsMut<Message<M, A>> for Request<M, A> 
 /// Indication message.
 #[derive(Debug, Clone)]
 pub struct Indication<M, A>(Message<M, A>);
-impl<M: IndicatableMethod, A: Attribute> Indication<M, A> {
+impl<M: Method, A: Attribute> Indication<M, A> {
     /// Makes a new indication message.
     pub fn new(method: M) -> Self {
         Indication(Message::new(
@@ -160,12 +159,12 @@ impl<M: IndicatableMethod, A: Attribute> Indication<M, A> {
         self.0
     }
 }
-impl<M: IndicatableMethod, A: Attribute> AsRef<Message<M, A>> for Indication<M, A> {
+impl<M: Method, A: Attribute> AsRef<Message<M, A>> for Indication<M, A> {
     fn as_ref(&self) -> &Message<M, A> {
         &self.0
     }
 }
-impl<M: IndicatableMethod, A: Attribute> AsMut<Message<M, A>> for Indication<M, A> {
+impl<M: Method, A: Attribute> AsMut<Message<M, A>> for Indication<M, A> {
     fn as_mut(&mut self) -> &mut Message<M, A> {
         &mut self.0
     }
@@ -174,7 +173,7 @@ impl<M: IndicatableMethod, A: Attribute> AsMut<Message<M, A>> for Indication<M, 
 /// Success response message.
 #[derive(Debug, Clone)]
 pub struct SuccessResponse<M, A>(Message<M, A>);
-impl<M: RequestableMethod, A: Attribute> SuccessResponse<M, A> {
+impl<M: Method, A: Attribute> SuccessResponse<M, A> {
     /// Makes a new `SuccessResponse` instance for the success response to the given request.
     pub fn new(request: Request<M, A>) -> Self {
         SuccessResponse(Message::new(
@@ -228,12 +227,12 @@ impl<M: RequestableMethod, A: Attribute> SuccessResponse<M, A> {
         self.0
     }
 }
-impl<M: RequestableMethod, A: Attribute> AsRef<Message<M, A>> for SuccessResponse<M, A> {
+impl<M: Method, A: Attribute> AsRef<Message<M, A>> for SuccessResponse<M, A> {
     fn as_ref(&self) -> &Message<M, A> {
         &self.0
     }
 }
-impl<M: RequestableMethod, A: Attribute> AsMut<Message<M, A>> for SuccessResponse<M, A> {
+impl<M: Method, A: Attribute> AsMut<Message<M, A>> for SuccessResponse<M, A> {
     fn as_mut(&mut self) -> &mut Message<M, A> {
         &mut self.0
     }
@@ -242,7 +241,7 @@ impl<M: RequestableMethod, A: Attribute> AsMut<Message<M, A>> for SuccessRespons
 /// Error response message.
 #[derive(Debug, Clone)]
 pub struct ErrorResponse<M, A>(Message<M, A>);
-impl<M: RequestableMethod, A: Attribute> ErrorResponse<M, A> {
+impl<M: Method, A: Attribute> ErrorResponse<M, A> {
     /// Makes a new `ErrorResponse` instance for the error response to the given request.
     pub fn new(request: Request<M, A>, error: ErrorCode) -> Self
     where
@@ -310,12 +309,12 @@ impl<M: RequestableMethod, A: Attribute> ErrorResponse<M, A> {
         self.0
     }
 }
-impl<M: RequestableMethod, A: Attribute> AsRef<Message<M, A>> for ErrorResponse<M, A> {
+impl<M: Method, A: Attribute> AsRef<Message<M, A>> for ErrorResponse<M, A> {
     fn as_ref(&self) -> &Message<M, A> {
         &self.0
     }
 }
-impl<M: RequestableMethod, A: Attribute> AsMut<Message<M, A>> for ErrorResponse<M, A> {
+impl<M: Method, A: Attribute> AsMut<Message<M, A>> for ErrorResponse<M, A> {
     fn as_mut(&mut self) -> &mut Message<M, A> {
         &mut self.0
     }

@@ -5,10 +5,10 @@ use fibers::net::futures::{RecvFrom, SendTo};
 use fibers::net::{TcpStream, UdpSocket};
 use futures::{Async, Future};
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 use std::net::SocketAddr;
-use stun_codec::{Attribute, Message, MessageDecoder, MessageEncoder, Method};
+use stun_codec::{Attribute, MessageDecoder, MessageEncoder, Method};
 
+use constants;
 use {Error, Result};
 
 pub trait Transport {
@@ -179,6 +179,7 @@ where
                 let bytes = track!(self.encoder.encode_into_bytes(item))?;
                 self.send_to = Some(self.socket.clone().send_to(bytes, peer));
             } else {
+                self.send_to = None;
                 break;
             }
         }
@@ -206,7 +207,7 @@ where
     fn from(f: UdpSocket) -> Self {
         let recv_from = f
             .clone()
-            .recv_from(vec![0; ::constants::DEFAULT_MAX_MESSAGE_SIZE]); // TODO
+            .recv_from(vec![0; constants::DEFAULT_MAX_MESSAGE_SIZE]);
         UdpTransporter {
             socket: f,
             decoder: D::default(),
@@ -256,12 +257,18 @@ where
     }
 }
 
-pub trait UdpTransport: Transport {}
+pub trait UdpTransport: Transport {
+    fn set_recv_buf_size(&mut self, size: usize);
+}
 impl<D, E> UdpTransport for UdpTransporter<D, E>
 where
     D: Decode + Default,
     E: Encode + Default,
-{}
+{
+    fn set_recv_buf_size(&mut self, size: usize) {
+        self.recv_from = self.socket.clone().recv_from(vec![0; size]);
+    }
+}
 
 pub trait TcpTransport: Transport {}
 impl<D, E> TcpTransport for TcpTransporter<D, E>

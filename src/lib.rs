@@ -67,20 +67,40 @@ extern crate trackable;
 //     };
 // }
 
-// pub use client::Client;
 pub use error::{Error, ErrorKind};
-// pub use server::HandleMessage;
 
+pub mod client;
 pub mod constants;
 pub mod message;
-pub mod method;
 pub mod transport;
 
-// pub mod client;
 mod error;
 // pub mod server;
 
 /// A specialized `Result` type for this crate.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
-// type BoxFuture<T, E> = Box<futures::Future<Item = T, Error = E> + Send + 'static>;
+#[derive(Debug)]
+pub struct AsyncResult<T>(fibers::sync::oneshot::Monitor<T, Error>);
+impl<T> AsyncResult<T> {
+    fn new() -> (AsyncReply<T>, Self) {
+        let (tx, rx) = fibers::sync::oneshot::monitor();
+        (AsyncReply(tx), AsyncResult(rx))
+    }
+}
+impl<T> futures::Future for AsyncResult<T> {
+    type Item = T;
+    type Error = Error;
+
+    fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+        track!(self.0.poll().map_err(Error::from))
+    }
+}
+
+#[derive(Debug)]
+struct AsyncReply<T>(fibers::sync::oneshot::Monitored<T, Error>);
+impl<T> AsyncReply<T> {
+    fn send(self, result: Result<T>) {
+        let _ = self.0.exit(result);
+    }
+}

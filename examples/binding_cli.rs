@@ -1,12 +1,15 @@
 extern crate clap;
-extern crate fibers;
+extern crate fibers_global;
+extern crate futures;
 extern crate rustun;
+extern crate stun_codec;
 
 use clap::{App, Arg};
-use fibers::{Executor, InPlaceExecutor, Spawn};
-use rustun::client::UdpClient;
-use rustun::rfc5389;
-use rustun::{Client, Method};
+use futures::Future;
+use rustun::client::{Client, UdpClient};
+use rustun::message::Request;
+use rustun::transport::UdpTransporter;
+use stun_codec::rfc5389;
 
 fn main() {
     let matches = App::new("rustun_cli")
@@ -27,11 +30,15 @@ fn main() {
         .parse()
         .expect("Invalid UDP address");
 
-    let mut executor = InPlaceExecutor::new().unwrap();
-    let mut client = UdpClient::new(&executor.handle(), addr);
-    let request = rfc5389::methods::Binding.request::<rfc5389::Attribute>();
-    let monitor = executor.spawn_monitor(client.call(request));
-    match executor.run_fiber(monitor).unwrap() {
+    let response =
+        UdpTransporter::bind("0.0.0.0:0".parse().unwrap()).and_then(move |transporter| {
+            let mut client = UdpClient::new(transporter, addr);
+            let request = Request::<_, rfc5389::Attribute>::new(rfc5389::methods::Binding);
+            let future = client.call(request);
+            fibers_global::spawn(client.map(|_| ()).map_err(|e| panic!("{}", e)));
+            future
+        });
+    match fibers_global::execute(response) {
         Ok(v) => println!("OK: {:?}", v),
         Err(e) => println!("ERROR: {}", e),
     }
