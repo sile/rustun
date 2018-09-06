@@ -261,7 +261,7 @@ where
             }
         }
 
-        if track!(self.transporter.poll_finish())? {
+        if track!(self.transporter.run_once())? {
             Ok(Async::Ready(None))
         } else {
             Ok(Async::NotReady)

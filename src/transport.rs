@@ -1,15 +1,16 @@
 //! Transport layer.
 use bytecodec::io::{BufferedIo, IoDecodeExt, IoEncodeExt};
-use bytecodec::{Decode, DecodeExt, Encode, EncodeExt, Eos};
+use bytecodec::{self, Decode, DecodeExt, Encode, EncodeExt, Eos};
 use fibers::net::futures::{RecvFrom, SendTo};
 use fibers::net::{TcpStream, UdpSocket};
 use futures::{Async, Future};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use stun_codec::{Attribute, MessageDecoder, MessageEncoder, TransactionId};
+use trackable::error::ErrorKindExt;
 
 use constants;
-use {Error, Result};
+use {Error, ErrorKind, Result};
 
 pub trait Transport {
     type Decoder: Decode;
@@ -17,7 +18,20 @@ pub trait Transport {
 
     fn send(&mut self, peer: SocketAddr, item: <Self::Encoder as Encode>::Item);
     fn recv(&mut self) -> Option<(SocketAddr, <Self::Decoder as Decode>::Item)>;
-    fn poll_finish(&mut self) -> Result<bool>;
+    fn run_once(&mut self) -> Result<bool>;
+}
+
+#[derive(Debug)]
+pub enum RecvResult<T> {
+    None,
+    Some {
+        peer: SocketAddr,
+        item: T,
+    },
+    DecodeError {
+        peer: SocketAddr,
+        error: bytecodec::Error,
+    },
 }
 
 pub trait UnreliableTransport: Transport {}
@@ -31,8 +45,9 @@ where
 }
 
 #[derive(Debug)]
-pub struct TcpTransporter<D, E: Encode> {
+pub struct TcpTransporter<D: Decode, E: Encode> {
     stream: BufferedIo<TcpStream>,
+    peer: SocketAddr,
     decoder: D,
     encoder: E,
     outgoing_queue: VecDeque<E::Item>,
@@ -45,7 +60,7 @@ where
 {
     pub fn connect(peer: SocketAddr) -> impl Future<Item = Self, Error = Error> {
         TcpStream::connect(peer)
-            .map(Self::from)
+            .map(move |stream| Self::from((peer, stream)))
             .map_err(|e| track!(Error::from(e)))
     }
 
@@ -89,8 +104,7 @@ where
             )?;
             if self.decoder.is_idle() {
                 let item = track!(self.decoder.finish_decoding())?;
-                let peer = track!(self.stream.stream_mut().peer_addr().map_err(Error::from))?;
-                return Ok(Some((peer, item)));
+                return Ok(Some((self.peer, item)));
             }
             if self.stream.would_block() {
                 break;
@@ -99,15 +113,16 @@ where
         Ok(None)
     }
 }
-impl<D, E> From<TcpStream> for TcpTransporter<D, E>
+impl<D, E> From<(SocketAddr, TcpStream)> for TcpTransporter<D, E>
 where
     D: Decode + Default,
     E: Encode + Default,
 {
-    fn from(f: TcpStream) -> Self {
-        let _ = f.set_nodelay(true);
+    fn from((peer, stream): (SocketAddr, TcpStream)) -> Self {
+        let _ = stream.set_nodelay(true);
         TcpTransporter {
-            stream: BufferedIo::new(f, 4096, 4096),
+            stream: BufferedIo::new(stream, 4096, 4096),
+            peer,
             decoder: D::default(),
             encoder: E::default(),
             outgoing_queue: VecDeque::new(),
@@ -123,8 +138,16 @@ where
     type Decoder = D;
     type Encoder = E;
 
-    fn send(&mut self, _peer: SocketAddr, item: E::Item) {
+    fn send(&mut self, peer: SocketAddr, item: E::Item) {
         if self.last_error.is_some() {
+            return;
+        }
+        if peer != self.peer {
+            let e = ErrorKind::InvalidInput.cause(format!(
+                "Unexpected destination peer: actual={}, expected={}",
+                peer, self.peer
+            ));
+            self.last_error = Some(e.into());
             return;
         }
         self.last_error = self.start_send(item).err();
@@ -143,7 +166,7 @@ where
         }
     }
 
-    fn poll_finish(&mut self) -> Result<bool> {
+    fn run_once(&mut self) -> Result<bool> {
         if let Some(e) = self.last_error.take() {
             return Err(track!(e));
         }
@@ -164,13 +187,13 @@ where
 }
 
 #[derive(Debug)]
-pub struct UdpTransporter<D, E: Encode> {
+pub struct UdpTransporter<D: Decode, E: Encode> {
     socket: UdpSocket,
     decoder: D,
     encoder: E,
     outgoing_queue: VecDeque<(SocketAddr, E::Item)>,
     send_to: Option<SendTo<Vec<u8>>>,
-    recv_from: RecvFrom<Vec<u8>>,
+    recv_from: RecvFrom<Vec<u8>>, // TODO: parameter
     last_error: Option<Error>,
 }
 impl<D, E> UdpTransporter<D, E>
@@ -264,7 +287,7 @@ where
         }
     }
 
-    fn poll_finish(&mut self) -> Result<bool> {
+    fn run_once(&mut self) -> Result<bool> {
         if let Some(e) = self.last_error.take() {
             return Err(track!(e));
         }
@@ -272,7 +295,7 @@ where
         Ok(false)
     }
 }
-impl<D, E> UnreliableTransport for TcpTransporter<D, E>
+impl<D, E> UnreliableTransport for UdpTransporter<D, E>
 where
     D: Decode + Default,
     E: Encode + Default,
@@ -310,8 +333,8 @@ where
     fn recv(&mut self) -> Option<(SocketAddr, <Self::Decoder as Decode>::Item)> {
         self.inner.recv()
     }
-    fn poll_finish(&mut self) -> Result<bool> {
-        track!(self.inner.poll_finish())
+    fn run_once(&mut self) -> Result<bool> {
+        track!(self.inner.run_once())
     }
 }
 impl<A, T> StunTransport<A> for RetransmitTransporter<A, T>
