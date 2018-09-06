@@ -56,10 +56,14 @@ extern crate trackable;
 
 pub use error::{Error, ErrorKind};
 
-pub mod client;
+// pub mod channel;
+// pub mod client;
+pub mod client2;
 pub mod constants;
 pub mod message;
-pub mod server;
+// pub mod server;
+pub mod agent;
+pub mod server2;
 pub mod transport;
 
 mod error;
@@ -70,10 +74,10 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug)]
 pub struct AsyncResult<T>(fibers::sync::oneshot::Monitor<T, Error>);
 impl<T> AsyncResult<T> {
-    fn new() -> (AsyncReply<T>, Self) {
-        let (tx, rx) = fibers::sync::oneshot::monitor();
-        (AsyncReply(tx), AsyncResult(rx))
-    }
+    // fn new() -> (AsyncReply<T>, Self) {
+    //     let (tx, rx) = fibers::sync::oneshot::monitor();
+    //     (AsyncReply(tx), AsyncResult(rx))
+    // }
 }
 impl<T> futures::Future for AsyncResult<T> {
     type Item = T;
@@ -84,10 +88,10 @@ impl<T> futures::Future for AsyncResult<T> {
     }
 }
 
-#[derive(Debug)]
-struct AsyncReply<T>(fibers::sync::oneshot::Monitored<T, Error>);
-impl<T> AsyncReply<T> {
-    fn send(self, result: Result<T>) {
-        let _ = self.0.exit(result);
-    }
-}
+// #[derive(Debug)]
+// struct AsyncReply<T>(fibers::sync::oneshot::Monitored<T, Error>);
+// impl<T> AsyncReply<T> {
+//     fn send(self, result: Result<T>) {
+//         let _ = self.0.exit(result);
+//     }
+// }

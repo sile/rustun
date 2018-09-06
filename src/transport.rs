@@ -6,7 +6,8 @@ use fibers::net::{TcpStream, UdpSocket};
 use futures::{Async, Future};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
-use stun_codec::{Attribute, MessageDecoder, MessageEncoder, Method};
+use stun_codec::num::U12;
+use stun_codec::{Attribute, MessageDecoder, MessageEncoder, Method, TransactionId};
 
 use constants;
 use {Error, Result};
@@ -18,6 +19,29 @@ pub trait Transport {
     fn send(&mut self, peer: SocketAddr, item: <Self::Encoder as Encode>::Item);
     fn recv(&mut self) -> Option<(SocketAddr, <Self::Decoder as Decode>::Item)>;
     fn poll_finish(&mut self) -> Result<bool>;
+}
+
+pub trait UnreliableTransport: Transport {}
+
+// TODO:
+#[derive(Debug, Clone)]
+pub struct AnyMethod(U12);
+impl Method for AnyMethod {
+    fn from_u12(x: U12) -> Option<Self> {
+        Some(AnyMethod(x))
+    }
+
+    fn as_u12(&self) -> U12 {
+        self.0
+    }
+}
+
+pub trait StunTransport<A>:
+    Transport<Decoder = MessageDecoder<AnyMethod, A>, Encoder = MessageEncoder<AnyMethod, A>>
+where
+    A: Attribute,
+{
+    fn cancel_retransmission(&mut self, transaction_id: TransactionId);
 }
 
 #[derive(Debug)]
@@ -146,6 +170,13 @@ where
         }
     }
 }
+impl<A> StunTransport<A>
+    for TcpTransporter<MessageDecoder<AnyMethod, A>, MessageEncoder<AnyMethod, A>>
+where
+    A: Attribute,
+{
+    fn cancel_retransmission(&mut self, _transaction_id: TransactionId) {}
+}
 
 #[derive(Debug)]
 pub struct UdpTransporter<D, E: Encode> {
@@ -256,42 +287,63 @@ where
         Ok(false)
     }
 }
-
-pub trait UdpTransport: Transport {
-    fn set_recv_buf_size(&mut self, size: usize);
-}
-impl<D, E> UdpTransport for UdpTransporter<D, E>
+impl<D, E> UnreliableTransport for TcpTransporter<D, E>
 where
     D: Decode + Default,
     E: Encode + Default,
+{}
+
+#[derive(Debug)]
+pub struct RetransmitTransporter<A, T> {
+    inner: T,
+    _phatom: ::std::marker::PhantomData<A>,
+}
+impl<A, T> RetransmitTransporter<A, T>
+where
+    A: Attribute,
+    T: UnreliableTransport<
+        Decoder = MessageDecoder<AnyMethod, A>,
+        Encoder = MessageEncoder<AnyMethod, A>,
+    >,
 {
-    fn set_recv_buf_size(&mut self, size: usize) {
-        self.recv_from = self.socket.clone().recv_from(vec![0; size]);
+    pub fn new(inner: T) -> Self {
+        RetransmitTransporter {
+            inner,
+            _phatom: Default::default(),
+        }
     }
 }
-
-pub trait TcpTransport: Transport {}
-impl<D, E> TcpTransport for TcpTransporter<D, E>
+impl<A, T> Transport for RetransmitTransporter<A, T>
 where
-    D: Decode + Default,
-    E: Encode + Default,
-{}
-
-pub trait StunTransport<M, A>:
-    Transport<Decoder = MessageDecoder<M, A>, Encoder = MessageEncoder<M, A>>
-where
-    M: Method,
     A: Attribute,
+    T: UnreliableTransport<
+        Decoder = MessageDecoder<AnyMethod, A>,
+        Encoder = MessageEncoder<AnyMethod, A>,
+    >,
 {
+    type Decoder = MessageDecoder<AnyMethod, A>;
+    type Encoder = MessageEncoder<AnyMethod, A>;
+
+    // TODO:
+    fn send(&mut self, peer: SocketAddr, item: <Self::Encoder as Encode>::Item) {
+        self.inner.send(peer, item);
+    }
+    fn recv(&mut self) -> Option<(SocketAddr, <Self::Decoder as Decode>::Item)> {
+        self.inner.recv()
+    }
+    fn poll_finish(&mut self) -> Result<bool> {
+        track!(self.inner.poll_finish())
+    }
 }
-impl<M, A> StunTransport<M, A> for UdpTransporter<MessageDecoder<M, A>, MessageEncoder<M, A>>
+impl<A, T> StunTransport<A> for RetransmitTransporter<A, T>
 where
-    M: Method,
     A: Attribute,
-{}
-impl<M, A> StunTransport<M, A> for TcpTransporter<MessageDecoder<M, A>, MessageEncoder<M, A>>
-where
-    M: Method,
-    A: Attribute,
-{}
-// TODO: MaybeMessgeDecoder
+    T: UnreliableTransport<
+        Decoder = MessageDecoder<AnyMethod, A>,
+        Encoder = MessageEncoder<AnyMethod, A>,
+    >,
+{
+    fn cancel_retransmission(&mut self, _transaction_id: TransactionId) {
+        panic!("TODO")
+    }
+}
