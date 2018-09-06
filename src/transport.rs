@@ -6,8 +6,7 @@ use fibers::net::{TcpStream, UdpSocket};
 use futures::{Async, Future};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
-use stun_codec::num::U12;
-use stun_codec::{Attribute, MessageDecoder, MessageEncoder, Method, TransactionId};
+use stun_codec::{Attribute, MessageDecoder, MessageEncoder, TransactionId};
 
 use constants;
 use {Error, Result};
@@ -23,21 +22,8 @@ pub trait Transport {
 
 pub trait UnreliableTransport: Transport {}
 
-// TODO:
-#[derive(Debug, Clone)]
-pub struct AnyMethod(U12);
-impl Method for AnyMethod {
-    fn from_u12(x: U12) -> Option<Self> {
-        Some(AnyMethod(x))
-    }
-
-    fn as_u12(&self) -> U12 {
-        self.0
-    }
-}
-
 pub trait StunTransport<A>:
-    Transport<Decoder = MessageDecoder<AnyMethod, A>, Encoder = MessageEncoder<AnyMethod, A>>
+    Transport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>
 where
     A: Attribute,
 {
@@ -170,8 +156,7 @@ where
         }
     }
 }
-impl<A> StunTransport<A>
-    for TcpTransporter<MessageDecoder<AnyMethod, A>, MessageEncoder<AnyMethod, A>>
+impl<A> StunTransport<A> for TcpTransporter<MessageDecoder<A>, MessageEncoder<A>>
 where
     A: Attribute,
 {
@@ -301,10 +286,7 @@ pub struct RetransmitTransporter<A, T> {
 impl<A, T> RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<
-        Decoder = MessageDecoder<AnyMethod, A>,
-        Encoder = MessageEncoder<AnyMethod, A>,
-    >,
+    T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
 {
     pub fn new(inner: T) -> Self {
         RetransmitTransporter {
@@ -316,13 +298,10 @@ where
 impl<A, T> Transport for RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<
-        Decoder = MessageDecoder<AnyMethod, A>,
-        Encoder = MessageEncoder<AnyMethod, A>,
-    >,
+    T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
 {
-    type Decoder = MessageDecoder<AnyMethod, A>;
-    type Encoder = MessageEncoder<AnyMethod, A>;
+    type Decoder = MessageDecoder<A>;
+    type Encoder = MessageEncoder<A>;
 
     // TODO:
     fn send(&mut self, peer: SocketAddr, item: <Self::Encoder as Encode>::Item) {
@@ -338,10 +317,7 @@ where
 impl<A, T> StunTransport<A> for RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<
-        Decoder = MessageDecoder<AnyMethod, A>,
-        Encoder = MessageEncoder<AnyMethod, A>,
-    >,
+    T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
 {
     fn cancel_retransmission(&mut self, _transaction_id: TransactionId) {
         panic!("TODO")

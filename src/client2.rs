@@ -6,7 +6,7 @@ use stun_codec::Attribute;
 
 use agent::{Agent, NoopMessageHandler};
 use message::{Indication, Request, Response};
-use transport::{AnyMethod, StunTransport};
+use transport::StunTransport;
 use AsyncResult;
 
 #[derive(Debug, Clone)]
@@ -26,21 +26,17 @@ impl<A: Attribute> Client<A> {
         Client { tx }
     }
 
-    pub fn call<M>(
-        &self,
-        _peer: SocketAddr,
-        _request: Request<M, A>,
-    ) -> AsyncResult<Response<M, A>> {
+    pub fn call(&self, _peer: SocketAddr, _request: Request<A>) -> AsyncResult<Response<A>> {
         panic!()
     }
 
-    pub fn cast<M>(&self, _peer: SocketAddr, _indication: Indication<M, A>) {
+    pub fn cast(&self, _peer: SocketAddr, _indication: Indication<A>) {
         panic!()
     }
 }
 
 #[derive(Debug)]
 pub enum Command<A> {
-    Call(Request<AnyMethod, A>),
-    Cast(Indication<AnyMethod, A>),
+    Call(Request<A>),
+    Cast(Indication<A>),
 }

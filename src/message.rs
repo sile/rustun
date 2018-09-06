@@ -32,14 +32,14 @@ use stun_codec::{Attribute, Message, MessageClass, Method, TransactionId};
 use {ErrorKind, Result};
 
 /// Response message.
-pub type Response<M, A> = std::result::Result<SuccessResponse<M, A>, ErrorResponse<M, A>>;
+pub type Response<A> = std::result::Result<SuccessResponse<A>, ErrorResponse<A>>;
 
 /// Request message.
 #[derive(Debug, Clone)]
-pub struct Request<M, A>(Message<M, A>);
-impl<M: Method, A: Attribute> Request<M, A> {
+pub struct Request<A>(Message<A>);
+impl<A: Attribute> Request<A> {
     /// Makes a new request message.
-    pub fn new(method: M) -> Self {
+    pub fn new(method: Method) -> Self {
         Request(Message::new(
             MessageClass::Request,
             method,
@@ -56,7 +56,7 @@ impl<M: Method, A: Attribute> Request<M, A> {
     ///
     /// And if the message contains some unknown comprehension-required attributes,
     /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<M, A>) -> Result<Self> {
+    pub fn from_message(message: Message<A>) -> Result<Self> {
         track_assert_eq!(
             message.class(),
             MessageClass::Request,
@@ -67,12 +67,12 @@ impl<M: Method, A: Attribute> Request<M, A> {
     }
 
     /// Returns the method of the message.
-    pub fn method(&self) -> &M {
+    pub fn method(&self) -> Method {
         self.0.method()
     }
 
     /// Returns the transaction ID of the message.
-    pub fn transaction_id(&self) -> &TransactionId {
+    pub fn transaction_id(&self) -> TransactionId {
         self.0.transaction_id()
     }
 
@@ -87,27 +87,27 @@ impl<M: Method, A: Attribute> Request<M, A> {
     }
 
     /// Takes ownership of this instance, and returns the internal message.
-    pub fn into_message(self) -> Message<M, A> {
+    pub fn into_message(self) -> Message<A> {
         self.0
     }
 }
-impl<M: Method, A: Attribute> AsRef<Message<M, A>> for Request<M, A> {
-    fn as_ref(&self) -> &Message<M, A> {
+impl<A: Attribute> AsRef<Message<A>> for Request<A> {
+    fn as_ref(&self) -> &Message<A> {
         &self.0
     }
 }
-impl<M: Method, A: Attribute> AsMut<Message<M, A>> for Request<M, A> {
-    fn as_mut(&mut self) -> &mut Message<M, A> {
+impl<A: Attribute> AsMut<Message<A>> for Request<A> {
+    fn as_mut(&mut self) -> &mut Message<A> {
         &mut self.0
     }
 }
 
 /// Indication message.
 #[derive(Debug, Clone)]
-pub struct Indication<M, A>(Message<M, A>);
-impl<M: Method, A: Attribute> Indication<M, A> {
+pub struct Indication<A>(Message<A>);
+impl<A: Attribute> Indication<A> {
     /// Makes a new indication message.
-    pub fn new(method: M) -> Self {
+    pub fn new(method: Method) -> Self {
         Indication(Message::new(
             MessageClass::Indication,
             method,
@@ -124,7 +124,7 @@ impl<M: Method, A: Attribute> Indication<M, A> {
     ///
     /// And if the message contains some unknown comprehension-required attributes,
     /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<M, A>) -> Result<Self> {
+    pub fn from_message(message: Message<A>) -> Result<Self> {
         track_assert_eq!(
             message.class(),
             MessageClass::Indication,
@@ -135,12 +135,12 @@ impl<M: Method, A: Attribute> Indication<M, A> {
     }
 
     /// Returns the method of the message.
-    pub fn method(&self) -> &M {
+    pub fn method(&self) -> Method {
         self.0.method()
     }
 
     /// Returns the transaction ID of the message.
-    pub fn transaction_id(&self) -> &TransactionId {
+    pub fn transaction_id(&self) -> TransactionId {
         self.0.transaction_id()
     }
 
@@ -155,27 +155,27 @@ impl<M: Method, A: Attribute> Indication<M, A> {
     }
 
     /// Takes ownership of this instance, and returns the internal message.
-    pub fn into_message(self) -> Message<M, A> {
+    pub fn into_message(self) -> Message<A> {
         self.0
     }
 }
-impl<M: Method, A: Attribute> AsRef<Message<M, A>> for Indication<M, A> {
-    fn as_ref(&self) -> &Message<M, A> {
+impl<A: Attribute> AsRef<Message<A>> for Indication<A> {
+    fn as_ref(&self) -> &Message<A> {
         &self.0
     }
 }
-impl<M: Method, A: Attribute> AsMut<Message<M, A>> for Indication<M, A> {
-    fn as_mut(&mut self) -> &mut Message<M, A> {
+impl<A: Attribute> AsMut<Message<A>> for Indication<A> {
+    fn as_mut(&mut self) -> &mut Message<A> {
         &mut self.0
     }
 }
 
 /// Success response message.
 #[derive(Debug, Clone)]
-pub struct SuccessResponse<M, A>(Message<M, A>);
-impl<M: Method, A: Attribute> SuccessResponse<M, A> {
+pub struct SuccessResponse<A>(Message<A>);
+impl<A: Attribute> SuccessResponse<A> {
     /// Makes a new `SuccessResponse` instance for the success response to the given request.
-    pub fn new(request: Request<M, A>) -> Self {
+    pub fn new(request: Request<A>) -> Self {
         SuccessResponse(Message::new(
             MessageClass::SuccessResponse,
             request.method().clone(),
@@ -192,7 +192,7 @@ impl<M: Method, A: Attribute> SuccessResponse<M, A> {
     ///
     /// And if the message contains some unknown comprehension-required attributes,
     /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<M, A>) -> Result<Self> {
+    pub fn from_message(message: Message<A>) -> Result<Self> {
         track_assert_eq!(
             message.class(),
             MessageClass::SuccessResponse,
@@ -203,12 +203,12 @@ impl<M: Method, A: Attribute> SuccessResponse<M, A> {
     }
 
     /// Returns the method of the message.
-    pub fn method(&self) -> &M {
+    pub fn method(&self) -> Method {
         self.0.method()
     }
 
     /// Returns the transaction ID of the message.
-    pub fn transaction_id(&self) -> &TransactionId {
+    pub fn transaction_id(&self) -> TransactionId {
         self.0.transaction_id()
     }
 
@@ -223,27 +223,27 @@ impl<M: Method, A: Attribute> SuccessResponse<M, A> {
     }
 
     /// Takes ownership of this instance, and returns the internal message.
-    pub fn into_message(self) -> Message<M, A> {
+    pub fn into_message(self) -> Message<A> {
         self.0
     }
 }
-impl<M: Method, A: Attribute> AsRef<Message<M, A>> for SuccessResponse<M, A> {
-    fn as_ref(&self) -> &Message<M, A> {
+impl<A: Attribute> AsRef<Message<A>> for SuccessResponse<A> {
+    fn as_ref(&self) -> &Message<A> {
         &self.0
     }
 }
-impl<M: Method, A: Attribute> AsMut<Message<M, A>> for SuccessResponse<M, A> {
-    fn as_mut(&mut self) -> &mut Message<M, A> {
+impl<A: Attribute> AsMut<Message<A>> for SuccessResponse<A> {
+    fn as_mut(&mut self) -> &mut Message<A> {
         &mut self.0
     }
 }
 
 /// Error response message.
 #[derive(Debug, Clone)]
-pub struct ErrorResponse<M, A>(Message<M, A>);
-impl<M: Method, A: Attribute> ErrorResponse<M, A> {
+pub struct ErrorResponse<A>(Message<A>);
+impl<A: Attribute> ErrorResponse<A> {
     /// Makes a new `ErrorResponse` instance for the error response to the given request.
-    pub fn new(request: Request<M, A>, error: ErrorCode) -> Self
+    pub fn new(request: Request<A>, error: ErrorCode) -> Self
     where
         A: From<ErrorCode>,
     {
@@ -266,7 +266,7 @@ impl<M: Method, A: Attribute> ErrorResponse<M, A> {
     ///
     /// And if the message contains some unknown comprehension-required attributes,
     /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<M, A>) -> Result<Self> {
+    pub fn from_message(message: Message<A>) -> Result<Self> {
         track_assert_eq!(
             message.class(),
             MessageClass::ErrorResponse,
@@ -285,12 +285,12 @@ impl<M: Method, A: Attribute> ErrorResponse<M, A> {
     }
 
     /// Returns the method of the message.
-    pub fn method(&self) -> &M {
+    pub fn method(&self) -> Method {
         self.0.method()
     }
 
     /// Returns the transaction ID of the message.
-    pub fn transaction_id(&self) -> &TransactionId {
+    pub fn transaction_id(&self) -> TransactionId {
         self.0.transaction_id()
     }
 
@@ -305,22 +305,22 @@ impl<M: Method, A: Attribute> ErrorResponse<M, A> {
     }
 
     /// Takes ownership of this instance, and returns the internal message.
-    pub fn into_message(self) -> Message<M, A> {
+    pub fn into_message(self) -> Message<A> {
         self.0
     }
 }
-impl<M: Method, A: Attribute> AsRef<Message<M, A>> for ErrorResponse<M, A> {
-    fn as_ref(&self) -> &Message<M, A> {
+impl<A: Attribute> AsRef<Message<A>> for ErrorResponse<A> {
+    fn as_ref(&self) -> &Message<A> {
         &self.0
     }
 }
-impl<M: Method, A: Attribute> AsMut<Message<M, A>> for ErrorResponse<M, A> {
-    fn as_mut(&mut self) -> &mut Message<M, A> {
+impl<A: Attribute> AsMut<Message<A>> for ErrorResponse<A> {
+    fn as_mut(&mut self) -> &mut Message<A> {
         &mut self.0
     }
 }
 
-fn check_unknown_attributes<M: Method, A: Attribute>(message: &Message<M, A>) -> Result<()> {
+fn check_unknown_attributes<A: Attribute>(message: &Message<A>) -> Result<()> {
     let required_unknowns = message
         .unknown_attributes()
         .filter_map(|a| {

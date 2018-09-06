@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use stun_codec::Attribute;
 
 use message::{Indication, Request, Response};
-use transport::{AnyMethod, StunTransport};
+use transport::StunTransport;
 use {AsyncResult, Error};
 
 #[derive(Debug)]
@@ -28,15 +28,11 @@ where
         }
     }
 
-    pub fn call<M>(
-        &mut self,
-        _peer: SocketAddr,
-        _request: Request<M, A>,
-    ) -> AsyncResult<Response<M, A>> {
+    pub fn call(&mut self, _peer: SocketAddr, _request: Request<A>) -> AsyncResult<Response<A>> {
         panic!()
     }
 
-    pub fn cast<M>(&mut self, _peer: SocketAddr, _indication: Indication<M, A>) {
+    pub fn cast(&mut self, _peer: SocketAddr, _indication: Indication<A>) {
         panic!()
     }
 
@@ -76,20 +72,16 @@ pub trait HandleMessage {
     fn handle_call(
         &mut self,
         peer: SocketAddr,
-        request: Request<AnyMethod, Self::Attribute>,
-    ) -> Reply<Response<AnyMethod, Self::Attribute>>;
+        request: Request<Self::Attribute>,
+    ) -> Reply<Response<Self::Attribute>>;
 
     fn handle_cast(
         &mut self,
         peer: SocketAddr,
-        indication: Indication<AnyMethod, Self::Attribute>,
+        indication: Indication<Self::Attribute>,
     ) -> Reply<Never>;
 
-    fn handle_error(
-        &mut self,
-        peer: SocketAddr,
-        error: Error,
-    ) -> Reply<Response<AnyMethod, Self::Attribute>>;
+    fn handle_error(&mut self, peer: SocketAddr, error: Error) -> Reply<Response<Self::Attribute>>;
 }
 
 #[derive(Debug)]
@@ -112,15 +104,15 @@ impl<A: Attribute> HandleMessage for NoopMessageHandler<A> {
     fn handle_call(
         &mut self,
         _peer: SocketAddr,
-        _request: Request<AnyMethod, Self::Attribute>,
-    ) -> Reply<Response<AnyMethod, Self::Attribute>> {
+        _request: Request<Self::Attribute>,
+    ) -> Reply<Response<Self::Attribute>> {
         Reply::NoReply
     }
 
     fn handle_cast(
         &mut self,
         _peer: SocketAddr,
-        _indication: Indication<AnyMethod, Self::Attribute>,
+        _indication: Indication<Self::Attribute>,
     ) -> Reply<Never> {
         Reply::NoReply
     }
@@ -129,7 +121,7 @@ impl<A: Attribute> HandleMessage for NoopMessageHandler<A> {
         &mut self,
         _peer: SocketAddr,
         _error: Error,
-    ) -> Reply<Response<AnyMethod, Self::Attribute>> {
+    ) -> Reply<Response<Self::Attribute>> {
         Reply::NoReply
     }
 }
