@@ -9,7 +9,12 @@ use transport::StunTransport;
 use {AsyncResult, Error};
 
 #[derive(Debug)]
-pub struct Agent<A, T, H> {
+pub struct Agent<A, T, H>
+where
+    A: Attribute,
+    T: StunTransport<A>,
+    H: HandleMessage<Attribute = A>,
+{
     transporter: T,
     handler: H,
     _phantom: PhantomData<A>,
@@ -55,6 +60,16 @@ where
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         panic!()
+    }
+}
+impl<A, T, H> Drop for Agent<A, T, H>
+where
+    A: Attribute,
+    T: StunTransport<A>,
+    H: HandleMessage<Attribute = A>,
+{
+    fn drop(&mut self) {
+        let _ = self.transporter.run_once();
     }
 }
 

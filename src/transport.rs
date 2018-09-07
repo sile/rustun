@@ -1,11 +1,13 @@
 //! Transport layer.
 use bytecodec::io::{BufferedIo, IoDecodeExt, IoEncodeExt};
-use bytecodec::{self, Decode, DecodeExt, Encode, EncodeExt, Eos};
+use bytecodec::{Decode, DecodeExt, Encode, EncodeExt, Eos};
 use fibers::net::futures::{RecvFrom, SendTo};
 use fibers::net::{TcpStream, UdpSocket};
 use futures::{Async, Future};
 use std::collections::VecDeque;
+use std::marker::PhantomData;
 use std::net::SocketAddr;
+use std::time::Duration;
 use stun_codec::{Attribute, MessageDecoder, MessageEncoder, TransactionId};
 use trackable::error::ErrorKindExt;
 
@@ -21,19 +23,6 @@ pub trait Transport {
     fn run_once(&mut self) -> Result<bool>;
 }
 
-#[derive(Debug)]
-pub enum RecvResult<T> {
-    None,
-    Some {
-        peer: SocketAddr,
-        item: T,
-    },
-    DecodeError {
-        peer: SocketAddr,
-        error: bytecodec::Error,
-    },
-}
-
 pub trait UnreliableTransport: Transport {}
 
 pub trait StunTransport<A>:
@@ -41,7 +30,7 @@ pub trait StunTransport<A>:
 where
     A: Attribute,
 {
-    fn cancel_retransmission(&mut self, transaction_id: TransactionId);
+    fn finish_transaction(&mut self, transaction_id: TransactionId);
 }
 
 #[derive(Debug)]
@@ -215,7 +204,7 @@ impl<A> StunTransport<A> for TcpTransporter<MessageDecoder<A>, MessageEncoder<A>
 where
     A: Attribute,
 {
-    fn cancel_retransmission(&mut self, _transaction_id: TransactionId) {}
+    fn finish_transaction(&mut self, _transaction_id: TransactionId) {}
 }
 
 #[derive(Debug, Clone)]
@@ -240,21 +229,27 @@ impl UdpTransporterBuilder {
         D: Decode + Default,
         E: Encode + Default,
     {
-        let recv_buf = vec![0; self.recv_buf_size];
+        let builder = self.clone();
         UdpSocket::bind(addr)
-            .map(|socket| {
-                let recv_from = socket.clone().recv_from(recv_buf);
-                UdpTransporter {
-                    socket,
-                    decoder: D::default(),
-                    encoder: E::default(),
-                    outgoing_queue: VecDeque::new(),
-                    send_to: None,
-                    recv_from,
-                    last_error: None,
-                }
-            })
+            .map(move |socket| builder.from_socket(socket))
             .map_err(|e| track!(Error::from(e)))
+    }
+
+    pub fn from_socket<D, E>(&self, socket: UdpSocket) -> UdpTransporter<D, E>
+    where
+        D: Decode + Default,
+        E: Encode + Default,
+    {
+        let recv_from = socket.clone().recv_from(vec![0; self.recv_buf_size]);
+        UdpTransporter {
+            socket,
+            decoder: D::default(),
+            encoder: E::default(),
+            outgoing_queue: VecDeque::new(),
+            send_to: None,
+            recv_from,
+            last_error: None,
+        }
     }
 }
 impl Default for UdpTransporterBuilder {
@@ -272,7 +267,7 @@ pub struct UdpTransporter<D: Decode, E: Encode> {
     encoder: E,
     outgoing_queue: VecDeque<(SocketAddr, E::Item)>,
     send_to: Option<SendTo<Vec<u8>>>,
-    recv_from: RecvFrom<Vec<u8>>, // TODO: parameter
+    recv_from: RecvFrom<Vec<u8>>,
     last_error: Option<Error>,
 }
 impl<D, E> UdpTransporter<D, E>
@@ -281,9 +276,7 @@ where
     E: Encode + Default,
 {
     pub fn bind(addr: SocketAddr) -> impl Future<Item = Self, Error = Error> {
-        UdpSocket::bind(addr)
-            .map(Self::from)
-            .map_err(|e| track!(Error::from(e)))
+        UdpTransporterBuilder::default().bind(addr)
     }
 
     fn poll_send(&mut self) -> Result<()> {
@@ -323,18 +316,7 @@ where
     E: Encode + Default,
 {
     fn from(f: UdpSocket) -> Self {
-        let recv_from = f
-            .clone()
-            .recv_from(vec![0; constants::DEFAULT_MAX_MESSAGE_SIZE]);
-        UdpTransporter {
-            socket: f,
-            decoder: D::default(),
-            encoder: E::default(),
-            outgoing_queue: VecDeque::new(),
-            send_to: None,
-            recv_from,
-            last_error: None,
-        }
+        UdpTransporterBuilder::default().from_socket(f)
     }
 }
 impl<D, E> Transport for UdpTransporter<D, E>
@@ -380,10 +362,58 @@ where
     E: Encode + Default,
 {}
 
+#[derive(Debug, Clone)]
+pub struct RetransmitTransporterBuilder {
+    rto: Duration,
+    rto_cache_duration: Duration,
+    min_transaction_interval: Duration,
+    max_outstanding_transactions: usize,
+}
+impl RetransmitTransporterBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn finish<A, T>(&self, inner: T) -> RetransmitTransporter<A, T>
+    where
+        A: Attribute,
+        T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
+    {
+        RetransmitTransporter {
+            inner,
+            _phantom: PhantomData,
+            current_rto: self.rto,
+            cached_rto: self.rto,
+            rto: self.rto,
+            rto_cache_duration: self.rto_cache_duration,
+            min_transaction_interval: self.min_transaction_interval,
+            max_outstanding_transactions: self.max_outstanding_transactions,
+        }
+    }
+}
+impl Default for RetransmitTransporterBuilder {
+    fn default() -> Self {
+        RetransmitTransporterBuilder {
+            rto: Duration::from_millis(constants::DEFAULT_RTO_MS),
+            rto_cache_duration: Duration::from_millis(constants::DEFAULT_RTO_CACHE_DURATION_MS),
+            min_transaction_interval: Duration::from_millis(
+                constants::DEFAULT_MIN_TRANSACTION_INTERVAL_MS,
+            ),
+            max_outstanding_transactions: constants::DEFAULT_MAX_OUTSTANDING_TRANSACTIONS,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct RetransmitTransporter<A, T> {
     inner: T,
-    _phatom: ::std::marker::PhantomData<A>,
+    _phantom: PhantomData<A>,
+    current_rto: Duration,
+    cached_rto: Duration,
+    rto: Duration,
+    rto_cache_duration: Duration,
+    min_transaction_interval: Duration,
+    max_outstanding_transactions: usize,
 }
 impl<A, T> RetransmitTransporter<A, T>
 where
@@ -391,10 +421,15 @@ where
     T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
 {
     pub fn new(inner: T) -> Self {
-        RetransmitTransporter {
-            inner,
-            _phatom: Default::default(),
-        }
+        RetransmitTransporterBuilder::new().finish(inner)
+    }
+
+    pub fn inner_ref(&self) -> &T {
+        &self.inner
+    }
+
+    pub fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
     }
 }
 impl<A, T> Transport for RetransmitTransporter<A, T>
@@ -421,7 +456,7 @@ where
     A: Attribute,
     T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
 {
-    fn cancel_retransmission(&mut self, _transaction_id: TransactionId) {
+    fn finish_transaction(&mut self, _transaction_id: TransactionId) {
         panic!("TODO")
     }
 }
