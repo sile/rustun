@@ -64,6 +64,38 @@ where
             .map_err(|e| track!(Error::from(e)))
     }
 
+    pub fn stream_ref(&self) -> &TcpStream {
+        self.stream.stream_ref()
+    }
+
+    pub fn stream_mut(&mut self) -> &mut TcpStream {
+        self.stream.stream_mut()
+    }
+
+    pub fn peer_addr(&self) -> SocketAddr {
+        self.peer
+    }
+
+    pub fn outgoing_queue_len(&self) -> usize {
+        self.outgoing_queue.len() + if self.encoder.is_idle() { 0 } else { 1 }
+    }
+
+    pub fn decoder_ref(&self) -> &D {
+        &self.decoder
+    }
+
+    pub fn decoder_mut(&mut self) -> &mut D {
+        &mut self.decoder
+    }
+
+    pub fn encoder_ref(&self) -> &E {
+        &self.encoder
+    }
+
+    pub fn encoder_mut(&mut self) -> &mut E {
+        &mut self.encoder
+    }
+
     fn start_send(&mut self, item: E::Item) -> Result<()> {
         if self.encoder.is_idle() {
             track!(self.encoder.start_encoding(item))?;
@@ -121,7 +153,7 @@ where
     fn from((peer, stream): (SocketAddr, TcpStream)) -> Self {
         let _ = stream.set_nodelay(true);
         TcpTransporter {
-            stream: BufferedIo::new(stream, 4096, 4096),
+            stream: BufferedIo::new(stream, 8192, 8192),
             peer,
             decoder: D::default(),
             encoder: E::default(),
@@ -184,6 +216,53 @@ where
     A: Attribute,
 {
     fn cancel_retransmission(&mut self, _transaction_id: TransactionId) {}
+}
+
+#[derive(Debug, Clone)]
+pub struct UdpTransporterBuilder {
+    recv_buf_size: usize,
+}
+impl UdpTransporterBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn recv_buf_size(&mut self, size: usize) -> &mut Self {
+        self.recv_buf_size = size;
+        self
+    }
+
+    pub fn bind<D, E>(
+        &self,
+        addr: SocketAddr,
+    ) -> impl Future<Item = UdpTransporter<D, E>, Error = Error>
+    where
+        D: Decode + Default,
+        E: Encode + Default,
+    {
+        let recv_buf = vec![0; self.recv_buf_size];
+        UdpSocket::bind(addr)
+            .map(|socket| {
+                let recv_from = socket.clone().recv_from(recv_buf);
+                UdpTransporter {
+                    socket,
+                    decoder: D::default(),
+                    encoder: E::default(),
+                    outgoing_queue: VecDeque::new(),
+                    send_to: None,
+                    recv_from,
+                    last_error: None,
+                }
+            })
+            .map_err(|e| track!(Error::from(e)))
+    }
+}
+impl Default for UdpTransporterBuilder {
+    fn default() -> Self {
+        UdpTransporterBuilder {
+            recv_buf_size: constants::DEFAULT_MAX_MESSAGE_SIZE,
+        }
+    }
 }
 
 #[derive(Debug)]
