@@ -67,6 +67,7 @@ pub mod server2;
 pub mod transport;
 
 mod error;
+mod timeout_queue;
 
 /// A specialized `Result` type for this crate.
 pub type Result<T> = ::std::result::Result<T, Error>;

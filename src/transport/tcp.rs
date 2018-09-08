@@ -186,5 +186,5 @@ impl<A> StunTransport<A> for TcpTransporter<MessageDecoder<A>, MessageEncoder<A>
 where
     A: Attribute,
 {
-    fn finish_transaction(&mut self, _transaction_id: TransactionId) {}
+    fn finish_transaction(&mut self, _peer: SocketAddr, _transaction_id: TransactionId) {}
 }
