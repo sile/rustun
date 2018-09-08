@@ -56,14 +56,11 @@ extern crate trackable;
 
 pub use error::{Error, ErrorKind};
 
-// pub mod channel;
-// pub mod client;
-pub mod client2;
+pub mod agent;
+pub mod client;
 pub mod constants;
 pub mod message;
-// pub mod server;
-pub mod agent;
-pub mod server2;
+pub mod server;
 pub mod transport;
 
 mod error;
