@@ -59,6 +59,7 @@ pub use error::{Error, ErrorKind};
 pub mod agent;
 pub mod client;
 pub mod constants;
+pub mod handler;
 pub mod message;
 pub mod server;
 pub mod transport;

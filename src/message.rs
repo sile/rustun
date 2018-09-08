@@ -249,12 +249,24 @@ impl<A: Attribute> ErrorResponse<A> {
     {
         let mut message = Message::new(
             MessageClass::ErrorResponse,
-            request.method().clone(),
-            request.transaction_id().clone(),
+            request.method(),
+            request.transaction_id(),
         );
         message.push_attribute(error.into());
         ErrorResponse(message)
     }
+
+    // TODO: from_broken_message
+
+    // /// Makes a new `ErrorResponse` instance for the error response to the given request.
+    // pub fn new2(method: Method, transaction_id: TransactionId, error: ErrorCode) -> Self
+    // where
+    //     A: From<ErrorCode>,
+    // {
+    //     let mut message = Message::new(MessageClass::ErrorResponse, method(), transaction_id());
+    //     message.push_attribute(error.into());
+    //     ErrorResponse(message)
+    // }
 
     /// Converts `Message` to `ErrorResponse`.
     ///

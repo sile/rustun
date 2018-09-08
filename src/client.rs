@@ -1,10 +1,11 @@
 use fibers::sync::mpsc;
 use fibers::Spawn;
-use futures::{Future, Stream};
+use futures::Future;
 use std::net::SocketAddr;
 use stun_codec::Attribute;
 
-use agent::{Agent, NoopMessageHandler};
+use agent::Agent;
+use handler::NoopMessageHandler;
 use message::{Indication, Request, Response};
 use transport::StunTransport;
 use AsyncResult;
@@ -22,7 +23,7 @@ impl<A: Attribute> Client<A> {
     {
         let (tx, _rx) = mpsc::channel();
         let agent = Agent::new(transporter, NoopMessageHandler::new());
-        spawner.spawn(agent.for_each(|_| Ok(())).map_err(|_| panic!("TODO")));
+        spawner.spawn(agent.map_err(|_| panic!("TODO")));
         Client { tx }
     }
 
