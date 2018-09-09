@@ -1,7 +1,7 @@
 rustun
 ======
 
-[![Crates.io: rustun](http://meritbadge.herokuapp.com/rustun)](https://crates.io/crates/rustun)
+[![Crates.io: rustun](https://img.shields.io/crates/v/rustun.svg)](https://crates.io/crates/rustun)
 [![Documentation](https://docs.rs/rustun/badge.svg)](https://docs.rs/rustun)
 [![Build Status](https://travis-ci.org/sile/rustun.svg?branch=master)](https://travis-ci.org/sile/rustun)
 [![Code Coverage](https://codecov.io/gh/sile/rustun/branch/master/graph/badge.svg)](https://codecov.io/gh/sile/rustun/branch/master)
