@@ -45,11 +45,11 @@
 //!
 //! You can run example server and client that handle `BINDING` method as follows:
 //!
-//! ```bash
-//! # Starts the STUN server in a shell.
+//! ```console
+//! // Starts the STUN server in a shell.
 //! $ cargo run --example binding_srv
 //!
-//! # Executes a STUN client in another shell.
+//! // Executes a STUN client in another shell.
 //! $ cargo run --example binding_cli -- 127.0.0.1
 //! Ok(SuccessResponse(Message {
 //!     class: SuccessResponse,
