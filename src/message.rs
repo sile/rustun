@@ -29,7 +29,16 @@ use std;
 use stun_codec::rfc5389::attributes::ErrorCode;
 use stun_codec::{Attribute, Message, MessageClass, Method, TransactionId};
 
-use {ErrorKind, Result};
+use {Error, ErrorKind, Result};
+
+// TODO:
+#[derive(Debug)]
+pub struct InvalidMessage {
+    pub method: Method,
+    pub class: MessageClass,
+    pub transaction_id: TransactionId,
+    pub error: Error,
+}
 
 /// Response message.
 pub type Response<A> = std::result::Result<SuccessResponse<A>, ErrorResponse<A>>;

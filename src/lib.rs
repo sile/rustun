@@ -57,6 +57,7 @@ extern crate trackable;
 pub use error::{Error, ErrorKind};
 
 pub mod agent;
+pub mod channel;
 pub mod client;
 pub mod constants;
 pub mod handler;
