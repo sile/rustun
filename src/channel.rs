@@ -181,6 +181,7 @@ where
         peer: SocketAddr,
         message: Message<A>,
     ) -> Option<RecvMessage<A>> {
+        // TODO: check method
         let class = message.class();
         let method = message.method();
         let transaction_id = message.transaction_id();
@@ -206,6 +207,7 @@ where
         peer: SocketAddr,
         message: Message<A>,
     ) -> Option<RecvMessage<A>> {
+        // TODO: check method
         let class = message.class();
         let method = message.method();
         let transaction_id = message.transaction_id();

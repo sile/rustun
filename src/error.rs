@@ -2,7 +2,7 @@ use bytecodec;
 use fibers::sync::oneshot::MonitorError;
 use std;
 use std::io;
-use std::sync::mpsc::RecvError;
+use std::sync::mpsc::{RecvError, SendError};
 use stun_codec::rfc5389::attributes::ErrorCode;
 use stun_codec::AttributeType;
 use trackable::error::{self, ErrorKindExt, TrackableError};
@@ -26,6 +26,11 @@ impl From<RecvError> for Error {
         ErrorKind::Other.cause(f).into()
     }
 }
+impl<T> From<SendError<T>> for Error {
+    fn from(_: SendError<T>) -> Self {
+        ErrorKind::Other.cause("Receiver has terminated").into()
+    }
+}
 impl From<std::time::SystemTimeError> for Error {
     fn from(f: std::time::SystemTimeError) -> Self {
         ErrorKind::Other.cause(f).into()
@@ -38,7 +43,7 @@ impl From<bytecodec::Error> for Error {
     }
 }
 
-// TODO:
+// TODO: transactoin level or connection level
 /// A list of error kind.
 #[derive(Debug, Clone)]
 pub enum ErrorKind {
