@@ -30,12 +30,12 @@ impl<T> From<SendError<T>> for Error {
 }
 impl From<bytecodec::Error> for Error {
     fn from(f: bytecodec::Error) -> Self {
-        let bytecodec_error_kind = *f.kind();
-        let kind = match bytecodec_error_kind {
+        let original_error_kind = *f.kind();
+        let kind = match original_error_kind {
             bytecodec::ErrorKind::InvalidInput => ErrorKind::InvalidInput,
             _ => ErrorKind::Other,
         };
-        track!(kind.takes_over(f); bytecodec_error_kind).into()
+        track!(kind.takes_over(f); original_error_kind).into()
     }
 }
 impl From<MessageError> for Error {
@@ -49,8 +49,15 @@ impl From<MessageError> for Error {
 /// Possible error kinds.
 #[derive(Debug, Clone)]
 pub enum ErrorKind {
+    /// Input is invalid.
     InvalidInput,
+
+    /// A message is invalid.
+    ///
+    /// This error does not affect the overall execution of a channel/client/server.
     InvalidMessage(MessageErrorKind),
+
+    /// Other errors.
     Other,
 }
 impl error::ErrorKind for ErrorKind {}
@@ -75,21 +82,32 @@ impl From<Error> for MessageError {
     }
 }
 
-/// Possible message-level error kinds.
+/// Possible error kinds.
 #[derive(Debug, Clone)]
 pub enum MessageErrorKind {
-    // InvalidResponse
-    UnknownTransaction,
-    UnexpectedMethod,
+    /// Unexpected response message.
+    UnexpectedResponse,
 
-    // InvalidRequest
-    TransactionIdConflict,
-
-    UnknownAttributes(Vec<AttributeType>),
+    /// There are some malformed attributes in a message.
     MalformedAttribute,
-    UnexpectedClass,
-    Timeout,
+
+    /// There are unknown comprehension-required attributes.
+    ///
+    /// If a server receives a message that contains unknown comprehension-required attributes,
+    /// it should reply an `ErrorResponse` message that has the [`UnknownAttribute`] error code and
+    /// an [`UnknownAttributes`] attribute.
+    ///
+    /// [`UnknownAttribute`]: https://docs.rs/stun_codec/0.1/stun_codec/rfc5389/errors/struct.UnknownAttribute.html
+    /// [`UnknownAttributes`]: https://docs.rs/stun_codec/0.1/stun_codec/rfc5389/attributes/struct.UnknownAttributes.html
+    UnknownAttributes(Vec<AttributeType>),
+
+    /// Input is invalid.
     InvalidInput,
+
+    /// Operation timed out.
+    Timeout,
+
+    /// Other errors.
     Other,
 }
 impl error::ErrorKind for MessageErrorKind {}

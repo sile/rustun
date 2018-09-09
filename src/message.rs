@@ -1,4 +1,4 @@
-//! STUN message related components.
+//! STUN messages.
 //!
 //! > STUN is a client-server protocol.  It supports two types of
 //! > transactions. One is a **request/response** transaction in which a
@@ -31,15 +31,51 @@ use stun_codec::{Attribute, Message, MessageClass, Method, TransactionId};
 
 pub use error::{MessageError, MessageErrorKind};
 
+/// A specialized `Result` type for message-level operations.
 pub type MessageResult<T> = Result<T, MessageError>;
 
-// TODO:
-#[derive(Debug)]
+/// Invalid message.
+#[derive(Debug, Clone)]
 pub struct InvalidMessage {
-    pub method: Method,
-    pub class: MessageClass,
-    pub transaction_id: TransactionId,
-    pub error: MessageError,
+    method: Method,
+    class: MessageClass,
+    transaction_id: TransactionId,
+    error: MessageError,
+}
+impl InvalidMessage {
+    /// Returns the method of the message.
+    pub fn method(&self) -> Method {
+        self.method
+    }
+
+    /// Returns the class of the message.
+    pub fn class(&self) -> MessageClass {
+        self.class
+    }
+
+    /// Returns the transaction ID of the message.
+    pub fn transaction_id(&self) -> TransactionId {
+        self.transaction_id
+    }
+
+    /// Returns a reference to the error object that describes why the message is invalid.
+    pub fn error(&self) -> &MessageError {
+        &self.error
+    }
+
+    pub(crate) fn new(
+        method: Method,
+        class: MessageClass,
+        transaction_id: TransactionId,
+        error: MessageError,
+    ) -> Self {
+        InvalidMessage {
+            method,
+            class,
+            transaction_id,
+            error,
+        }
+    }
 }
 
 /// Response message.
@@ -58,21 +94,20 @@ impl<A: Attribute> Request<A> {
         ))
     }
 
-    // TODO: fix doc
     /// Converts `Message` to `Request`.
     ///
     /// # Errors
     ///
     /// If the class of the given message is not `MessageClass::Request`,
-    /// this function will return an `ErrorKind::InvalidInput` error.
+    /// this function will return a `MessageErrorKind::InvalidInput` error.
     ///
     /// And if the message contains some unknown comprehension-required attributes,
-    /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<A>) -> Result<Self, MessageError> {
+    /// this function will return a `MessageErrorKind::UnknownAttributes` error.
+    pub fn from_message(message: Message<A>) -> MessageResult<Self> {
         track_assert_eq!(
             message.class(),
             MessageClass::Request,
-            MessageErrorKind::UnexpectedClass
+            MessageErrorKind::InvalidInput
         );
         track!(check_unknown_attributes(&message))?;
         Ok(Request(message))
@@ -132,15 +167,15 @@ impl<A: Attribute> Indication<A> {
     /// # Errors
     ///
     /// If the class of the given message is not `MessageClass::Indication`,
-    /// this function will return an `ErrorKind::InvalidInput` error.
+    /// this function will return a `MessageErrorKind::InvalidInput` error.
     ///
     /// And if the message contains some unknown comprehension-required attributes,
-    /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<A>) -> Result<Self, MessageError> {
+    /// this function will return a `MessageErrorKind::UnknownAttributes` error.
+    pub fn from_message(message: Message<A>) -> MessageResult<Self> {
         track_assert_eq!(
             message.class(),
             MessageClass::Indication,
-            MessageErrorKind::UnexpectedClass
+            MessageErrorKind::InvalidInput
         );
         track!(check_unknown_attributes(&message))?;
         Ok(Indication(message))
@@ -200,15 +235,15 @@ impl<A: Attribute> SuccessResponse<A> {
     /// # Errors
     ///
     /// If the class of the given message is not `MessageClass::SuccessResponse`,
-    /// this function will return an `ErrorKind::InvalidInput` error.
+    /// this function will return a `MessageErrorKind::InvalidInput` error.
     ///
     /// And if the message contains some unknown comprehension-required attributes,
-    /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<A>) -> Result<Self, MessageError> {
+    /// this function will return a `MessageErrorKind::UnknownAttributes` error.
+    pub fn from_message(message: Message<A>) -> MessageResult<Self> {
         track_assert_eq!(
             message.class(),
             MessageClass::SuccessResponse,
-            MessageErrorKind::UnexpectedClass
+            MessageErrorKind::InvalidInput
         );
         track!(check_unknown_attributes(&message))?;
         Ok(SuccessResponse(message))
@@ -268,33 +303,21 @@ impl<A: Attribute> ErrorResponse<A> {
         ErrorResponse(message)
     }
 
-    // TODO: from_broken_message
-
-    // /// Makes a new `ErrorResponse` instance for the error response to the given request.
-    // pub fn new2(method: Method, transaction_id: TransactionId, error: ErrorCode) -> Self
-    // where
-    //     A: From<ErrorCode>,
-    // {
-    //     let mut message = Message::new(MessageClass::ErrorResponse, method(), transaction_id());
-    //     message.push_attribute(error.into());
-    //     ErrorResponse(message)
-    // }
-
     /// Converts `Message` to `ErrorResponse`.
     ///
     /// # Errors
     ///
     /// If the class of the given message is not `MessageClass::ErrorResponse` or
     /// the message does not contains an `ErrorCode` attribute,
-    /// this function will return an `ErrorKind::InvalidInput` error.
+    /// this function will return a `ErrorKind::InvalidInput` error.
     ///
     /// And if the message contains some unknown comprehension-required attributes,
-    /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<A>) -> Result<Self, MessageError> {
+    /// this function will return a `ErrorKind::UnknownAttributes` error.
+    pub fn from_message(message: Message<A>) -> MessageResult<Self> {
         track_assert_eq!(
             message.class(),
             MessageClass::ErrorResponse,
-            MessageErrorKind::UnexpectedClass
+            MessageErrorKind::InvalidInput
         );
         track!(check_unknown_attributes(&message))?;
 
@@ -344,7 +367,7 @@ impl<A: Attribute> AsMut<Message<A>> for ErrorResponse<A> {
     }
 }
 
-fn check_unknown_attributes<A: Attribute>(message: &Message<A>) -> Result<(), MessageError> {
+fn check_unknown_attributes<A: Attribute>(message: &Message<A>) -> MessageResult<()> {
     let required_unknowns = message
         .unknown_attributes()
         .filter_map(|a| {

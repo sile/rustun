@@ -1,4 +1,4 @@
-//! Transport layer.
+//! Transport layer abstractions and its built-in implementations.
 use bytecodec::{Decode, Encode};
 use std::net::SocketAddr;
 use stun_codec::{Attribute, MessageDecoder, MessageEncoder, TransactionId};

@@ -10,6 +10,9 @@ use trackable::error::ErrorKindExt;
 use super::{StunTransport, Transport};
 use {Error, ErrorKind, Result};
 
+/// An implementation of [`Transport`] that uses TCP as the transport layer.
+///
+/// [`Transport`]: ./trait.Transport.html
 #[derive(Debug)]
 pub struct TcpTransporter<D: Decode, E: Encode> {
     stream: BufferedIo<TcpStream>,
@@ -24,45 +27,60 @@ where
     D: Decode + Default,
     E: Encode + Default,
 {
+    /// Starts connecting to the given peer and
+    /// will return a new `TcpTransporter` instance if the connect operation is succeeded.
     pub fn connect(peer: SocketAddr) -> impl Future<Item = Self, Error = Error> {
         TcpStream::connect(peer)
             .map(move |stream| Self::from((peer, stream)))
             .map_err(|e| track!(Error::from(e)))
     }
 
+    /// Makes a new `TcpTransporter` instance from the given TCP stream.
+    ///
+    /// # Errors
+    ///
+    /// If `stream.peer_addr()` returns an error, this function will return an `ErrorKind::Other` error.
     pub fn from_stream(stream: TcpStream) -> Result<Self> {
         let peer = track!(stream.peer_addr().map_err(Error::from))?;
         Ok(Self::from((peer, stream)))
     }
 
+    /// Returns the address of the connected peer.
     pub fn peer_addr(&self) -> SocketAddr {
         self.peer
     }
 
+    /// Returns the number of unsent messages in the queue of the instance.
     pub fn message_queue_len(&self) -> usize {
         self.outgoing_queue.len() + if self.encoder.is_idle() { 0 } else { 1 }
     }
 
+    /// Returns a reference to the TCP stream being used by the instance.
     pub fn stream_ref(&self) -> &TcpStream {
         self.stream.stream_ref()
     }
 
+    /// Returns a mutable reference to the TCP stream being used by the instance.
     pub fn stream_mut(&mut self) -> &mut TcpStream {
         self.stream.stream_mut()
     }
 
+    /// Returns a reference to the decoder being used by the instance.
     pub fn decoder_ref(&self) -> &D {
         &self.decoder
     }
 
+    /// Returns a mutable reference to the decoder being used by the instance.
     pub fn decoder_mut(&mut self) -> &mut D {
         &mut self.decoder
     }
 
+    /// Returns a reference to the encoder being used by the instance.
     pub fn encoder_ref(&self) -> &E {
         &self.encoder
     }
 
+    /// Returns a mutable reference to the encoder being used by the instance.
     pub fn encoder_mut(&mut self) -> &mut E {
         &mut self.encoder
     }

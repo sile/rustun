@@ -1,4 +1,9 @@
-//! STUN client.
+//! Basic STUN client.
+//!
+//! This module provides only a basic STUN client.
+//! If you want more elaborate one, please consider create your own client using [`Channel`] directly.
+//!
+//! [`Channel`]: ../channel/struct.Channel.html
 use fibers::sync::{mpsc, oneshot};
 use fibers::Spawn;
 use futures::stream::Fuse;

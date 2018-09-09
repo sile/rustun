@@ -1,3 +1,9 @@
+//! Basic STUN servers.
+//!
+//! This module provides only a basic STUN servers.
+//! If you want more elaborate one, please consider create your own server using [`Channel`] directly.
+//!
+//! [`Channel`]: ../channel/struct.Channel.html
 use bytecodec::marker::Never;
 use factory::Factory;
 use fibers::net::futures::{TcpListenerBind, UdpSocketBind};
@@ -18,9 +24,18 @@ use transport::{
 };
 use {Error, ErrorKind};
 
+/// The default TCP and UDP port for STUN.
+pub const DEFAULT_PORT: u16 = 3478;
+
+/// The default TLS port for STUN.
+pub const DEFAULT_TLS_PORT: u16 = 5349;
+
+/// UDP based STUN server.
 #[derive(Debug)]
+#[must_use = "future do nothing unless polled"]
 pub struct UdpServer<H: HandleMessage>(UdpServerInner<H>);
 impl<H: HandleMessage> UdpServer<H> {
+    /// Starts the server.
     pub fn start<S>(spawner: S, bind_addr: SocketAddr, handler: H) -> Self
     where
         S: Spawn + Send + 'static,
@@ -98,7 +113,9 @@ impl<H: HandleMessage> fmt::Debug for UdpServerInner<H> {
     }
 }
 
+/// TCP based STUN server.
 #[derive(Debug)]
+#[must_use = "future do nothing unless polled"]
 pub struct TcpServer<S, H>(TcpServerInner<S, H>);
 impl<S, H> TcpServer<S, H>
 where
@@ -106,6 +123,7 @@ where
     H: Factory,
     H::Item: HandleMessage,
 {
+    /// Starts the server.
     pub fn start(spawner: S, bind_addr: SocketAddr, handler_factory: H) -> Self {
         let inner = TcpServerInner::Binding {
             future: TcpListener::bind(bind_addr),
@@ -184,7 +202,7 @@ where
                             let future = future.then(move |result| match result {
                                 Err(e) => {
                                     let e = track!(Error::from(e));
-                                    handler.handle_transport_error(&e);
+                                    handler.handle_channel_error(&e);
                                     Either::A(futures::failed(e))
                                 }
                                 Ok(stream) => {
@@ -215,10 +233,18 @@ impl<S, H> fmt::Debug for TcpServerInner<S, H> {
     }
 }
 
+/// Action instructed by an operation of a message handler.
 pub enum Action<T> {
+    /// Replies an response to the client immediately.
     Reply(T),
+
+    /// Replies an response to the client in the future.
     FutureReply(Box<Future<Item = T, Error = Never> + Send + 'static>),
+
+    /// Does not reply to the client.
     NoReply,
+
+    /// Does not reply to the client, but does something for handling the incoming message.
     FutureNoReply(Box<Future<Item = (), Error = Never> + Send + 'static>),
 }
 impl<T: fmt::Debug> fmt::Debug for Action<T> {
@@ -232,10 +258,15 @@ impl<T: fmt::Debug> fmt::Debug for Action<T> {
     }
 }
 
+/// This trait allows for handling messages sent by clients.
 #[allow(unused_variables)]
 pub trait HandleMessage {
+    /// The attributes that the handler can recognize.
     type Attribute: Attribute + Send + 'static;
 
+    /// Handles a request message.
+    ///
+    /// The default implementation always returns `Action::NoReply`.
     fn handle_call(
         &mut self,
         peer: SocketAddr,
@@ -244,6 +275,9 @@ pub trait HandleMessage {
         Action::NoReply
     }
 
+    /// Handles an indication message.
+    ///
+    /// The default implementation always returns `Action::NoReply`.
     fn handle_cast(
         &mut self,
         peer: SocketAddr,
@@ -252,6 +286,12 @@ pub trait HandleMessage {
         Action::NoReply
     }
 
+    /// Handles an invalid incoming message.
+    ///
+    /// Note that this method should not return `Action::Reply(_)` or `Action::FutureReply(_)`
+    /// if the class of `message` is not `MessageClass::Request`.
+    ///
+    /// The default implementation always returns `Action::NoReply`.
     fn handle_invalid_message(
         &mut self,
         peer: SocketAddr,
@@ -260,7 +300,10 @@ pub trait HandleMessage {
         Action::NoReply
     }
 
-    fn handle_transport_error(&mut self, error: &Error) {}
+    /// Handles an error before the channel drops by the error.
+    ///
+    /// The default implementation does nothing.
+    fn handle_channel_error(&mut self, error: &Error) {}
 }
 
 #[derive(Debug)]
@@ -356,7 +399,7 @@ where
 
             match track!(self.channel.poll()) {
                 Err(e) => {
-                    self.handler.handle_transport_error(&e);
+                    self.handler.handle_channel_error(&e);
                     return Err(e);
                 }
                 Ok(Async::NotReady) => {}

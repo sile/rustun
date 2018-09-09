@@ -106,8 +106,10 @@ where
         let id = request.transaction_id();
         let (tx, rx) = oneshot::monitor();
         if self.transactions.contains_key(&(peer, id)) {
-            let e = MessageErrorKind::TransactionIdConflict
-                .cause(format!("peer={:?}, transaction_id={:?}", peer, id));
+            let e = MessageErrorKind::InvalidInput.cause(format!(
+                "Transaction ID conflicts: peer={:?}, transaction_id={:?}",
+                peer, id
+            ));
             tx.exit(Err(track!(e).into()));
         } else {
             self.transactions.insert((peer, id), (request.method(), tx));
@@ -179,12 +181,12 @@ where
     fn handle_broken_message(&self, message: BrokenMessage) -> RecvMessage<A> {
         let bytecodec_error_kind = *message.error().kind();
         let error = MessageErrorKind::MalformedAttribute.takes_over(message.error().clone());
-        RecvMessage::Invalid(InvalidMessage {
-            method: message.method(),
-            class: message.class(),
-            transaction_id: message.transaction_id(),
-            error: track!(error; bytecodec_error_kind).into(),
-        })
+        RecvMessage::Invalid(InvalidMessage::new(
+            message.method(),
+            message.class(),
+            message.transaction_id(),
+            track!(error; bytecodec_error_kind).into(),
+        ))
     }
 
     fn handle_indication(&self, message: Message<A>) -> RecvMessage<A> {
@@ -192,12 +194,9 @@ where
         let method = message.method();
         let transaction_id = message.transaction_id();
         match track!(Indication::from_message(message)) {
-            Err(error) => RecvMessage::Invalid(InvalidMessage {
-                method,
-                class,
-                transaction_id,
-                error,
-            }),
+            Err(error) => {
+                RecvMessage::Invalid(InvalidMessage::new(method, class, transaction_id, error))
+            }
             Ok(indication) => RecvMessage::Indication(indication),
         }
     }
@@ -207,12 +206,9 @@ where
         let method = message.method();
         let transaction_id = message.transaction_id();
         match track!(Request::from_message(message)) {
-            Err(error) => RecvMessage::Invalid(InvalidMessage {
-                method,
-                class,
-                transaction_id,
-                error,
-            }),
+            Err(error) => {
+                RecvMessage::Invalid(InvalidMessage::new(method, class, transaction_id, error))
+            }
             Ok(request) => RecvMessage::Request(request),
         }
     }
@@ -229,20 +225,17 @@ where
             self.transporter.finish_transaction(peer, transaction_id);
             let result = track!(SuccessResponse::from_message(message))
                 .and_then(|m| {
-                    track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedMethod);
+                    track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
                     Ok(m)
                 })
                 .map(Ok);
             tx.exit(result);
             None
         } else {
-            let error = track!(MessageErrorKind::UnknownTransaction.error()).into();
-            let message = RecvMessage::Invalid(InvalidMessage {
-                method,
-                class,
-                transaction_id,
-                error,
-            });
+            let error =
+                track!(MessageErrorKind::UnexpectedResponse.cause("Unknown transaction ID")).into();
+            let message =
+                RecvMessage::Invalid(InvalidMessage::new(method, class, transaction_id, error));
             Some(message)
         }
     }
@@ -259,20 +252,17 @@ where
             self.transporter.finish_transaction(peer, transaction_id);
             let result = track!(ErrorResponse::from_message(message))
                 .and_then(|m| {
-                    track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedMethod);
+                    track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
                     Ok(m)
                 })
                 .map(Err);
             tx.exit(result);
             None
         } else {
-            let error = track!(MessageErrorKind::UnknownTransaction.error()).into();
-            let message = RecvMessage::Invalid(InvalidMessage {
-                method,
-                class,
-                transaction_id,
-                error,
-            });
+            let error =
+                track!(MessageErrorKind::UnexpectedResponse.cause("Unknown transaction ID")).into();
+            let message =
+                RecvMessage::Invalid(InvalidMessage::new(method, class, transaction_id, error));
             Some(message)
         }
     }

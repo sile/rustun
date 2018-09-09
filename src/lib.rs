@@ -60,7 +60,6 @@ pub use error::{Error, ErrorKind};
 
 pub mod channel;
 pub mod client;
-pub mod constants; // TODO: delete
 pub mod message;
 pub mod server;
 pub mod transport;
