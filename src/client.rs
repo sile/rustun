@@ -23,7 +23,7 @@ pub struct Client<A> {
 }
 impl<A> Client<A> {
     /// Makes a new `Client` instance that uses the given channel for sending/receiving messages.
-    pub fn new<S, T>(spawner: S, channel: Channel<A, T>) -> Self
+    pub fn new<S, T>(spawner: &S, channel: Channel<A, T>) -> Self
     where
         S: Spawn + Clone + Send + 'static,
         A: Attribute + Send + 'static,

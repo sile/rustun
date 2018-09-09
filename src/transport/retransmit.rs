@@ -195,6 +195,7 @@ where
         self.peers.get_mut(&peer).expect("never fails")
     }
 
+    #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
     fn start_transaction(&mut self, peer: SocketAddr, request: Message<A>, first: bool) {
         if !self.peers.contains_key(&peer) {
             self.peers.insert(peer, PeerState::new(peer, self.rto));

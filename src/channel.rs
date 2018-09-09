@@ -98,6 +98,7 @@ where
 
     /// Sends the given request message to the destination peer and
     /// returns a future that waits the corresponding response.
+    #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
     pub fn call(
         &mut self,
         peer: SocketAddr,
@@ -167,7 +168,7 @@ where
         message: std::result::Result<Message<A>, BrokenMessage>,
     ) -> Option<(SocketAddr, RecvMessage<A>)> {
         let message = match message {
-            Err(broken) => Some(self.handle_broken_message(broken)),
+            Err(broken) => Some(self.handle_broken_message(&broken)),
             Ok(message) => match message.class() {
                 MessageClass::Indication => Some(self.handle_indication(message)),
                 MessageClass::Request => Some(self.handle_request(message)),
@@ -178,7 +179,7 @@ where
         message.map(|m| (peer, m))
     }
 
-    fn handle_broken_message(&self, message: BrokenMessage) -> RecvMessage<A> {
+    fn handle_broken_message(&self, message: &BrokenMessage) -> RecvMessage<A> {
         let bytecodec_error_kind = *message.error().kind();
         let error = MessageErrorKind::MalformedAttribute.takes_over(message.error().clone());
         RecvMessage::Invalid(InvalidMessage::new(

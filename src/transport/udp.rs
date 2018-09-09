@@ -166,16 +166,17 @@ where
     }
 
     fn poll_recv(&mut self) -> Result<Option<(SocketAddr, D::Item)>> {
-        while let Async::Ready((socket, buf, size, peer)) = self
+        if let Async::Ready((socket, buf, size, peer)) = self
             .recv_from
             .poll()
             .map_err(|(_, _, e)| track!(Error::from(e)))?
         {
             let item = track!(self.decoder.decode_from_bytes(&buf[..size]))?;
             self.recv_from = socket.recv_from(buf);
-            return Ok(Some((peer, item)));
+            Ok(Some((peer, item)))
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 }
 impl<D, E> From<UdpSocket> for UdpTransporter<D, E>

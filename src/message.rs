@@ -222,11 +222,11 @@ impl<A: Attribute> AsMut<Message<A>> for Indication<A> {
 pub struct SuccessResponse<A>(Message<A>);
 impl<A: Attribute> SuccessResponse<A> {
     /// Makes a new `SuccessResponse` instance for the success response to the given request.
-    pub fn new(request: Request<A>) -> Self {
+    pub fn new(request: &Request<A>) -> Self {
         SuccessResponse(Message::new(
             MessageClass::SuccessResponse,
-            request.method().clone(),
-            request.transaction_id().clone(),
+            request.method(),
+            request.transaction_id(),
         ))
     }
 
@@ -290,7 +290,7 @@ impl<A: Attribute> AsMut<Message<A>> for SuccessResponse<A> {
 pub struct ErrorResponse<A>(Message<A>);
 impl<A: Attribute> ErrorResponse<A> {
     /// Makes a new `ErrorResponse` instance for the error response to the given request.
-    pub fn new(request: Request<A>, error: ErrorCode) -> Self
+    pub fn new(request: &Request<A>, error: ErrorCode) -> Self
     where
         A: From<ErrorCode>,
     {
@@ -325,8 +325,7 @@ impl<A: Attribute> ErrorResponse<A> {
             .attributes()
             .map(|a| a.get_type())
             .chain(message.unknown_attributes().map(|a| a.get_type()))
-            .find(|t| t.as_u16() == ErrorCode::CODEPOINT)
-            .is_some();
+            .any(|t| t.as_u16() == ErrorCode::CODEPOINT);
         track_assert!(contains_error_code, MessageErrorKind::InvalidInput);
         Ok(ErrorResponse(message))
     }

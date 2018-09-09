@@ -6,7 +6,7 @@ extern crate stun_codec;
 extern crate trackable;
 
 use clap::{App, Arg};
-use rustun::message::{Request, Response, SuccessResponse};
+use rustun::message::{ErrorResponse, Request, Response, SuccessResponse};
 use rustun::server::{Action, HandleMessage, UdpServer};
 use std::net::SocketAddr;
 use stun_codec::rfc5389;
@@ -41,9 +41,13 @@ impl HandleMessage for BindingHandler {
         peer: SocketAddr,
         request: Request<Self::Attribute>,
     ) -> Action<Response<Self::Attribute>> {
-        // TODO: check method
-        let mut response = SuccessResponse::new(request);
-        response.push_attribute(rfc5389::attributes::XorMappedAddress::new(peer).into());
-        Action::Reply(Ok(response))
+        if request.method() == rfc5389::methods::BINDING {
+            let mut response = SuccessResponse::new(&request);
+            response.push_attribute(rfc5389::attributes::XorMappedAddress::new(peer).into());
+            Action::Reply(Ok(response))
+        } else {
+            let response = ErrorResponse::new(&request, rfc5389::errors::BadRequest.into());
+            Action::Reply(Err(response))
+        }
     }
 }

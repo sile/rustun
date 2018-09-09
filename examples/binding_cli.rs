@@ -44,7 +44,7 @@ fn main() -> Result<(), MainError> {
         .map(RetransmitTransporter::new)
         .map(Channel::new)
         .and_then(move |channel| {
-            let client = Client::new(fibers_global::handle(), channel);
+            let client = Client::new(&fibers_global::handle(), channel);
             let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
             client.call(peer_addr, request)
         });
