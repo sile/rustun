@@ -96,6 +96,8 @@ mod tests {
     use factory::DefaultFactory;
     use fibers_global;
     use futures::Future;
+    use std::thread;
+    use std::time::Duration;
     use stun_codec::rfc5389;
     use trackable::error::MainError;
 
@@ -137,6 +139,7 @@ mod tests {
             DefaultFactory::<BindingHandler>::new(),
         );
         fibers_global::spawn(server.map(|_| ()).map_err(|e| panic!("{}", e)));
+        thread::sleep(Duration::from_millis(50));
 
         let response = TcpTransporter::connect(server_addr)
             .map(Channel::new)
