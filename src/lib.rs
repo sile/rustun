@@ -70,6 +70,7 @@ mod timeout_queue;
 /// A specialized `Result` type for this crate.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
+// TODO: private
 #[derive(Debug)]
 pub struct AsyncResult<T>(fibers::sync::oneshot::Monitor<T, Error>);
 impl<T> AsyncResult<T> {

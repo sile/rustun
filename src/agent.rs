@@ -6,7 +6,7 @@ use stun_codec::Attribute;
 use handler::HandleMessage;
 use message::{Indication, Request, Response};
 use transport::StunTransport;
-use {AsyncResult, Error};
+use Error;
 
 #[derive(Debug)]
 pub struct Agent<A, T, H>
@@ -16,7 +16,7 @@ where
     H: HandleMessage<Attribute = A>,
 {
     transporter: T,
-    handler: H,
+    message_handler: H,
     _phantom: PhantomData<A>,
 }
 impl<A, T, H> Agent<A, T, H>
@@ -25,16 +25,20 @@ where
     T: StunTransport<A>,
     H: HandleMessage<Attribute = A>,
 {
-    pub fn new(transporter: T, handler: H) -> Self {
+    pub fn new(transporter: T, message_handler: H) -> Self {
         Agent {
             transporter,
-            handler,
+            message_handler,
             _phantom: PhantomData,
         }
     }
 
-    pub fn call(&mut self, _peer: SocketAddr, _request: Request<A>) -> AsyncResult<Response<A>> {
-        panic!()
+    pub fn call(
+        &mut self,
+        _peer: SocketAddr,
+        _request: Request<A>,
+    ) -> impl Future<Item = Response<A>, Error = Error> {
+        ::futures::finished(panic!())
     }
 
     pub fn cast(&mut self, _peer: SocketAddr, _indication: Indication<A>) {
@@ -42,11 +46,11 @@ where
     }
 
     pub fn message_handler_ref(&self) -> &H {
-        &self.handler
+        &self.message_handler
     }
 
     pub fn message_handler_mut(&mut self) -> &mut H {
-        &mut self.handler
+        &mut self.message_handler
     }
 }
 impl<A, T, H> Future for Agent<A, T, H>

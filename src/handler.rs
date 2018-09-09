@@ -39,6 +39,7 @@ pub trait HandleMessage {
         indication: Indication<Self::Attribute>,
     ) -> Action<Never>;
 
+    // TODO: handle error (broken or unknown-transaction or unknown-attributes, etc)
     fn handle_broken_message(
         &mut self,
         peer: SocketAddr,
