@@ -117,7 +117,7 @@ where
     }
 
     fn poll_recv(&mut self) -> Result<Option<(SocketAddr, D::Item)>> {
-        while self.stream.is_eos() {
+        while !self.stream.is_eos() {
             track!(self.stream.execute_io())?;
             track!(
                 self.decoder

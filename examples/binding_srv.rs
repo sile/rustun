@@ -6,10 +6,7 @@ extern crate stun_codec;
 extern crate trackable;
 
 use clap::{App, Arg};
-use rustun::message::{ErrorResponse, Request, Response, SuccessResponse};
-use rustun::server::{Action, HandleMessage, UdpServer};
-use std::net::SocketAddr;
-use stun_codec::rfc5389;
+use rustun::server::{BindingHandler, UdpServer};
 use trackable::error::MainError;
 
 fn main() -> Result<(), MainError> {
@@ -30,24 +27,4 @@ fn main() -> Result<(), MainError> {
     let server = UdpServer::start(fibers_global::handle(), addr, BindingHandler);
     track!(fibers_global::execute(server))?;
     Ok(())
-}
-
-struct BindingHandler;
-impl HandleMessage for BindingHandler {
-    type Attribute = rfc5389::Attribute;
-
-    fn handle_call(
-        &mut self,
-        peer: SocketAddr,
-        request: Request<Self::Attribute>,
-    ) -> Action<Response<Self::Attribute>> {
-        if request.method() == rfc5389::methods::BINDING {
-            let mut response = SuccessResponse::new(&request);
-            response.push_attribute(rfc5389::attributes::XorMappedAddress::new(peer).into());
-            Action::Reply(Ok(response))
-        } else {
-            let response = ErrorResponse::new(&request, rfc5389::errors::BadRequest.into());
-            Action::Reply(Err(response))
-        }
-    }
 }

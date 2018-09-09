@@ -15,10 +15,11 @@ use futures::future::Either;
 use futures::{self, Async, Future, Poll, Stream};
 use std::fmt;
 use std::net::SocketAddr;
+use stun_codec::rfc5389;
 use stun_codec::Attribute;
 
 use channel::{Channel, RecvMessage};
-use message::{Indication, InvalidMessage, Request, Response};
+use message::{ErrorResponse, Indication, InvalidMessage, Request, Response, SuccessResponse};
 use transport::{
     RetransmitTransporter, StunTransport, StunUdpTransporter, TcpTransporter, UdpTransporter,
 };
@@ -419,5 +420,29 @@ where
             }
         }
         Ok(Async::NotReady)
+    }
+}
+
+/// Example `BINDING` request handler.
+///
+/// Note that this is provided only for test and example purposes.
+#[derive(Debug, Default, Clone)]
+pub struct BindingHandler;
+impl HandleMessage for BindingHandler {
+    type Attribute = rfc5389::Attribute;
+
+    fn handle_call(
+        &mut self,
+        peer: SocketAddr,
+        request: Request<Self::Attribute>,
+    ) -> Action<Response<Self::Attribute>> {
+        if request.method() == rfc5389::methods::BINDING {
+            let mut response = SuccessResponse::new(&request);
+            response.push_attribute(rfc5389::attributes::XorMappedAddress::new(peer).into());
+            Action::Reply(Ok(response))
+        } else {
+            let response = ErrorResponse::new(&request, rfc5389::errors::BadRequest.into());
+            Action::Reply(Err(response))
+        }
     }
 }
