@@ -1,5 +1,4 @@
-//! Asynchronous implementation of STUN [[RFC 5389](https://tools.ietf.org/html/rfc5389)]
-//! server and client.
+//! An asynchronous implementation of [STUN][RFC 5389] server and client.
 //!
 //! # Examples
 //!
@@ -46,6 +45,12 @@
 //!            attributes: [XorMappedAddress(XorMappedAddress(V4(127.0.0.1:61991)))]
 //!       })
 //! ```
+//!
+//! # References
+//!
+//! - [RFC 5389 - Session Traversal Utilities for NAT (STUN)][RFC 5389]
+//!
+//! [RFC 5389]: https://tools.ietf.org/html/rfc5389
 #![warn(missing_docs)]
 extern crate bytecodec;
 extern crate factory;
