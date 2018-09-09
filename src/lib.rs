@@ -5,7 +5,9 @@
 //!
 //! A client-side example that issues a Binding request:
 //!
-//! ```no_run
+//! TODO
+//!
+//! ```text
 //! extern crate fibers;
 //! extern crate rustun;
 //!
@@ -44,8 +46,7 @@
 //!            attributes: [XorMappedAddress(XorMappedAddress(V4(127.0.0.1:61991)))]
 //!       })
 //! ```
-// #![warn(missing_docs)] TODO
-
+#![warn(missing_docs)]
 extern crate bytecodec;
 extern crate factory;
 extern crate fibers;
@@ -59,7 +60,7 @@ pub use error::{Error, ErrorKind};
 
 pub mod channel;
 pub mod client;
-pub mod constants;
+pub mod constants; // TODO: delete
 pub mod message;
 pub mod server;
 pub mod transport;

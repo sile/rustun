@@ -1,3 +1,4 @@
+//! STUN client.
 use fibers::sync::{mpsc, oneshot};
 use fibers::Spawn;
 use futures::stream::Fuse;
@@ -10,11 +11,13 @@ use message::{Indication, Request, Response};
 use transport::StunTransport;
 use {Error, Result};
 
+/// STUN client.
 #[derive(Debug, Clone)]
 pub struct Client<A> {
     command_tx: mpsc::Sender<Command<A>>,
 }
 impl<A> Client<A> {
+    /// Makes a new `Client` instance that uses the given channel for sending/receiving messages.
     pub fn new<S, T>(spawner: S, channel: Channel<A, T>) -> Self
     where
         S: Spawn + Clone + Send + 'static,
@@ -31,6 +34,8 @@ impl<A> Client<A> {
         Client { command_tx }
     }
 
+    /// Sends the given request message to the destination peer and
+    /// returns a future that waits the corresponding response.
     pub fn call(
         &self,
         peer: SocketAddr,
@@ -43,6 +48,12 @@ impl<A> Client<A> {
             .and_then(move |()| rx.map_err(|e| track!(Error::from(e))))
     }
 
+    /// Sends the given indication message to the destination peer.
+    ///
+    /// # Errors
+    ///
+    /// If the channel being used by the client has dropped,
+    /// this will return an `ErrorKind::Other` error.
     pub fn cast(&self, peer: SocketAddr, indication: Indication<A>) -> Result<()> {
         let command = Command::Cast(peer, indication);
         track!(self.command_tx.send(command).map_err(Error::from))
