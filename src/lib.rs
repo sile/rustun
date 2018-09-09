@@ -47,6 +47,7 @@
 // #![warn(missing_docs)] TODO
 
 extern crate bytecodec;
+extern crate factory;
 extern crate fibers;
 extern crate futures;
 extern crate rand;
@@ -59,7 +60,6 @@ pub use error::{Error, ErrorKind};
 pub mod channel;
 pub mod client;
 pub mod constants;
-pub mod handler; // TODO: delete
 pub mod message;
 pub mod server;
 pub mod transport;

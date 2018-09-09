@@ -16,6 +16,7 @@ codecov = {repository = "sile/rustun"}
 
 [dependencies]
 bytecodec = "0.4"
+factory = "0.1"
 fibers = "0.1"
 futures = "0.1"
 rand = "0.5"

@@ -13,6 +13,9 @@ mod retransmit;
 mod tcp;
 mod udp;
 
+pub type StunUdpTransporter<A> =
+    RetransmitTransporter<A, UdpTransporter<MessageDecoder<A>, MessageEncoder<A>>>;
+
 pub trait Transport {
     type Decoder: Decode;
     type Encoder: Encode;
