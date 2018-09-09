@@ -29,7 +29,9 @@ use std;
 use stun_codec::rfc5389::attributes::ErrorCode;
 use stun_codec::{Attribute, Message, MessageClass, Method, TransactionId};
 
-use {Error, ErrorKind, Result};
+pub use error::{MessageError, MessageErrorKind};
+
+pub type MessageResult<T> = Result<T, MessageError>;
 
 // TODO:
 #[derive(Debug)]
@@ -37,7 +39,7 @@ pub struct InvalidMessage {
     pub method: Method,
     pub class: MessageClass,
     pub transaction_id: TransactionId,
-    pub error: Error,
+    pub error: MessageError,
 }
 
 /// Response message.
@@ -56,6 +58,7 @@ impl<A: Attribute> Request<A> {
         ))
     }
 
+    // TODO: fix doc
     /// Converts `Message` to `Request`.
     ///
     /// # Errors
@@ -65,11 +68,11 @@ impl<A: Attribute> Request<A> {
     ///
     /// And if the message contains some unknown comprehension-required attributes,
     /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<A>) -> Result<Self> {
+    pub fn from_message(message: Message<A>) -> Result<Self, MessageError> {
         track_assert_eq!(
             message.class(),
             MessageClass::Request,
-            ErrorKind::InvalidInput
+            MessageErrorKind::UnexpectedClass
         );
         track!(check_unknown_attributes(&message))?;
         Ok(Request(message))
@@ -133,11 +136,11 @@ impl<A: Attribute> Indication<A> {
     ///
     /// And if the message contains some unknown comprehension-required attributes,
     /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<A>) -> Result<Self> {
+    pub fn from_message(message: Message<A>) -> Result<Self, MessageError> {
         track_assert_eq!(
             message.class(),
             MessageClass::Indication,
-            ErrorKind::InvalidInput
+            MessageErrorKind::UnexpectedClass
         );
         track!(check_unknown_attributes(&message))?;
         Ok(Indication(message))
@@ -201,11 +204,11 @@ impl<A: Attribute> SuccessResponse<A> {
     ///
     /// And if the message contains some unknown comprehension-required attributes,
     /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<A>) -> Result<Self> {
+    pub fn from_message(message: Message<A>) -> Result<Self, MessageError> {
         track_assert_eq!(
             message.class(),
             MessageClass::SuccessResponse,
-            ErrorKind::InvalidInput
+            MessageErrorKind::UnexpectedClass
         );
         track!(check_unknown_attributes(&message))?;
         Ok(SuccessResponse(message))
@@ -287,11 +290,11 @@ impl<A: Attribute> ErrorResponse<A> {
     ///
     /// And if the message contains some unknown comprehension-required attributes,
     /// this function will return an `ErrorKind::UnknownAttributes` error.
-    pub fn from_message(message: Message<A>) -> Result<Self> {
+    pub fn from_message(message: Message<A>) -> Result<Self, MessageError> {
         track_assert_eq!(
             message.class(),
             MessageClass::ErrorResponse,
-            ErrorKind::InvalidInput
+            MessageErrorKind::UnexpectedClass
         );
         track!(check_unknown_attributes(&message))?;
 
@@ -301,7 +304,7 @@ impl<A: Attribute> ErrorResponse<A> {
             .chain(message.unknown_attributes().map(|a| a.get_type()))
             .find(|t| t.as_u16() == ErrorCode::CODEPOINT)
             .is_some();
-        track_assert!(contains_error_code, ErrorKind::InvalidInput);
+        track_assert!(contains_error_code, MessageErrorKind::InvalidInput);
         Ok(ErrorResponse(message))
     }
 
@@ -341,7 +344,7 @@ impl<A: Attribute> AsMut<Message<A>> for ErrorResponse<A> {
     }
 }
 
-fn check_unknown_attributes<A: Attribute>(message: &Message<A>) -> Result<()> {
+fn check_unknown_attributes<A: Attribute>(message: &Message<A>) -> Result<(), MessageError> {
     let required_unknowns = message
         .unknown_attributes()
         .filter_map(|a| {
@@ -354,7 +357,7 @@ fn check_unknown_attributes<A: Attribute>(message: &Message<A>) -> Result<()> {
         .collect::<Vec<_>>();
     track_assert!(
         required_unknowns.is_empty(),
-        ErrorKind::UnknownAttributes(required_unknowns)
+        MessageErrorKind::UnknownAttributes(required_unknowns)
     );
     Ok(())
 }

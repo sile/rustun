@@ -1,6 +1,5 @@
 extern crate clap;
 extern crate fibers_global;
-extern crate futures;
 extern crate rustun;
 extern crate stun_codec;
 #[macro_use]
@@ -42,6 +41,7 @@ impl HandleMessage for BindingHandler {
         peer: SocketAddr,
         request: Request<Self::Attribute>,
     ) -> Action<Response<Self::Attribute>> {
+        // TODO: check method
         let mut response = SuccessResponse::new(request);
         response.push_attribute(rfc5389::attributes::XorMappedAddress::new(peer).into());
         Action::Reply(Ok(response))

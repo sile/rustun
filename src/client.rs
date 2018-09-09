@@ -83,10 +83,12 @@ where
                     reply.exit(Err(track!(e.clone())));
                 }
                 Ok(ref mut channel) => {
-                    let future = channel.call(peer, request).then(move |result| {
-                        reply.exit(track!(result));
-                        Ok(())
-                    });
+                    let future = channel.call(peer, request).map_err(Error::from).then(
+                        move |result| {
+                            reply.exit(track!(result));
+                            Ok(())
+                        },
+                    );
                     self.spawner.spawn(future);
                 }
             },

@@ -8,12 +8,15 @@ use stun_codec::{Attribute, BrokenMessage, Message, MessageClass, TransactionId}
 use trackable::error::ErrorKindExt;
 
 use constants;
-use message::{ErrorResponse, Indication, InvalidMessage, Request, Response, SuccessResponse};
+use message::{
+    ErrorResponse, Indication, InvalidMessage, MessageError, MessageErrorKind, Request, Response,
+    SuccessResponse,
+};
 use timeout_queue::TimeoutQueue;
 use transport::StunTransport;
-use {Error, ErrorKind};
+use Error;
 
-type Reply<A> = oneshot::Monitored<Response<A>, Error>;
+type Reply<A> = oneshot::Monitored<Response<A>, MessageError>;
 
 #[derive(Debug, Clone)]
 pub struct ChannelBuilder {
@@ -70,21 +73,19 @@ where
         &mut self,
         peer: SocketAddr,
         request: Request<A>,
-    ) -> impl Future<Item = Response<A>, Error = Error> {
+    ) -> impl Future<Item = Response<A>, Error = MessageError> {
         let id = request.transaction_id();
         let (tx, rx) = oneshot::monitor();
         if self.transactions.contains_key(&(peer, id)) {
-            let e = ErrorKind::InvalidInput.cause(format!(
-                "Transaction ID conflicted: peer={:?}, transaction_id={:?}",
-                peer, id
-            ));
+            let e = MessageErrorKind::TransactionIdConflict
+                .cause(format!("peer={:?}, transaction_id={:?}", peer, id));
             tx.exit(Err(track!(e).into()));
         } else {
             self.transactions.insert((peer, id), tx);
             self.timeout_queue.push((peer, id), self.request_timeout);
             self.transporter.send(peer, request.into_message());
         }
-        rx.map_err(Error::from)
+        rx.map_err(MessageError::from)
     }
 
     pub fn cast(&mut self, peer: SocketAddr, indication: Indication<A>) {
@@ -117,7 +118,7 @@ where
             .pop_expired(|entry| transactions.contains_key(entry))
         {
             if let Some(tx) = transactions.remove(&(peer, id)) {
-                let e = track!(ErrorKind::Timeout.error());
+                let e = track!(MessageErrorKind::Timeout.error());
                 tx.exit(Err(e.into()));
             }
             self.transporter.finish_transaction(peer, id);
@@ -142,11 +143,13 @@ where
     }
 
     fn handle_broken_message(&self, message: BrokenMessage) -> RecvMessage<A> {
+        let bytecodec_error_kind = *message.error().kind();
+        let error = MessageErrorKind::MalformedAttribute.takes_over(message.error().clone());
         RecvMessage::Invalid(InvalidMessage {
             method: message.method(),
             class: message.class(),
             transaction_id: message.transaction_id(),
-            error: track!(Error::from(message.error().clone())),
+            error: track!(error; bytecodec_error_kind).into(),
         })
     }
 
@@ -195,7 +198,7 @@ where
             tx.exit(result);
             None
         } else {
-            let error = track!(ErrorKind::UnknownTransaction.error()).into();
+            let error = track!(MessageErrorKind::UnknownTransaction.error()).into();
             let message = RecvMessage::Invalid(InvalidMessage {
                 method,
                 class,
@@ -221,7 +224,7 @@ where
             tx.exit(result);
             None
         } else {
-            let error = track!(ErrorKind::UnknownTransaction.error()).into();
+            let error = track!(MessageErrorKind::UnknownTransaction.error()).into();
             let message = RecvMessage::Invalid(InvalidMessage {
                 method,
                 class,
@@ -250,13 +253,16 @@ where
 
         match track!(self.transporter.run_once()) {
             Err(e) => {
+                let message_error = track!(MessageError::from(e.clone()));
                 for (_, reply) in self.transactions.drain() {
-                    reply.exit(Err(e.clone()));
+                    reply.exit(Err(message_error.clone()));
                 }
                 Err(e)
             }
             Ok(true) => {
-                let e = Error::from(track!(ErrorKind::Other.cause("Transporter terminated")));
+                let e = MessageError::from(track!(
+                    MessageErrorKind::Other.cause("Transporter terminated")
+                ));
                 for (_, reply) in self.transactions.drain() {
                     reply.exit(Err(e.clone()));
                 }
