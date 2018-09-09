@@ -3,16 +3,22 @@ extern crate fibers_global;
 extern crate futures;
 extern crate rustun;
 extern crate stun_codec;
+#[macro_use]
+extern crate trackable;
 
 use clap::{App, Arg};
 use futures::Future;
-use rustun::client::{Client, UdpClient};
+use rustun::channel::Channel;
+use rustun::client::Client;
 use rustun::message::Request;
-use rustun::transport::UdpTransporter;
+use rustun::transport::{RetransmitTransporter, UdpTransporter};
+use std::net::ToSocketAddrs;
 use stun_codec::rfc5389;
+use trackable::error::Failed;
+use trackable::error::MainError;
 
-fn main() {
-    let matches = App::new("rustun_cli")
+fn main() -> Result<(), MainError> {
+    let matches = App::new("binding_cli")
         .arg(Arg::with_name("HOST").index(1).required(true))
         .arg(
             Arg::with_name("PORT")
@@ -26,20 +32,23 @@ fn main() {
 
     let host = matches.value_of("HOST").unwrap();
     let port = matches.value_of("PORT").unwrap();
-    let addr = format!("{}:{}", host, port)
-        .parse()
-        .expect("Invalid UDP address");
+    let peer_addr = track_assert_some!(
+        track_any_err!(format!("{}:{}", host, port).to_socket_addrs())?
+            .filter(|x| x.is_ipv4())
+            .nth(0),
+        Failed
+    );
 
-    let response =
-        UdpTransporter::bind("0.0.0.0:0".parse().unwrap()).and_then(move |transporter| {
-            let mut client = UdpClient::new(transporter, addr);
-            let request = Request::<_, rfc5389::Attribute>::new(rfc5389::methods::Binding);
-            let future = client.call(request);
-            fibers_global::spawn(client.map(|_| ()).map_err(|e| panic!("{}", e)));
-            future
+    let local_addr = "0.0.0.0:0".parse().unwrap();
+    let response = UdpTransporter::bind(local_addr)
+        .map(RetransmitTransporter::new)
+        .map(Channel::new)
+        .and_then(move |channel| {
+            let client = Client::new(fibers_global::handle(), channel);
+            let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
+            client.call(peer_addr, request)
         });
-    match fibers_global::execute(response) {
-        Ok(v) => println!("OK: {:?}", v),
-        Err(e) => println!("ERROR: {}", e),
-    }
+    let response = track!(fibers_global::execute(response))?;
+    println!("{:?}", response);
+    Ok(())
 }

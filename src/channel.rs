@@ -106,6 +106,10 @@ where
         &mut self.transporter
     }
 
+    pub fn outstanding_transactions(&self) -> usize {
+        self.transactions.len()
+    }
+
     fn handle_timeout(&mut self) {
         let transactions = &mut self.transactions;
         while let Some((peer, id)) = self
@@ -243,10 +247,22 @@ where
                 return Ok(Async::Ready(Some(item)));
             }
         }
-        if track!(self.transporter.run_once())? {
-            Ok(Async::Ready(None))
-        } else {
-            Ok(Async::NotReady)
+
+        match track!(self.transporter.run_once()) {
+            Err(e) => {
+                for (_, reply) in self.transactions.drain() {
+                    reply.exit(Err(e.clone()));
+                }
+                Err(e)
+            }
+            Ok(true) => {
+                let e = Error::from(track!(ErrorKind::Other.cause("Transporter terminated")));
+                for (_, reply) in self.transactions.drain() {
+                    reply.exit(Err(e.clone()));
+                }
+                Ok(Async::Ready(None))
+            }
+            Ok(false) => Ok(Async::NotReady),
         }
     }
 }

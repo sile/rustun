@@ -232,6 +232,7 @@ impl<T: fmt::Debug> fmt::Debug for Action<T> {
     }
 }
 
+#[allow(unused_variables)]
 pub trait HandleMessage {
     type Attribute: Attribute + Send + 'static;
 
@@ -239,21 +240,26 @@ pub trait HandleMessage {
         &mut self,
         peer: SocketAddr,
         request: Request<Self::Attribute>,
-    ) -> Action<Response<Self::Attribute>>;
+    ) -> Action<Response<Self::Attribute>> {
+        Action::NoReply
+    }
 
     fn handle_cast(
         &mut self,
         peer: SocketAddr,
         indication: Indication<Self::Attribute>,
-    ) -> Action<Never>;
+    ) -> Action<Never> {
+        Action::NoReply
+    }
 
     fn handle_invalid_message(
         &mut self,
         peer: SocketAddr,
         message: InvalidMessage,
-    ) -> Action<Response<Self::Attribute>>;
+    ) -> Action<Response<Self::Attribute>> {
+        Action::NoReply
+    }
 
-    #[allow(unused_variables)]
     fn handle_transport_error(&mut self, error: &Error) {}
 }
 

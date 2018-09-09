@@ -13,7 +13,11 @@ pub struct Error(TrackableError<ErrorKind>);
 derive_traits_for_trackable_error_newtype!(Error, ErrorKind);
 impl From<MonitorError<Error>> for Error {
     fn from(f: MonitorError<Error>) -> Self {
-        f.unwrap_or(ErrorKind::Other.into())
+        f.unwrap_or(
+            ErrorKind::Other
+                .cause("Monitor channel disconnected")
+                .into(),
+        )
     }
 }
 impl From<io::Error> for Error {

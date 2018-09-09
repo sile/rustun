@@ -1,5 +1,6 @@
 use fibers::sync::{mpsc, oneshot};
 use fibers::Spawn;
+use futures::stream::Fuse;
 use futures::{Async, Future, IntoFuture, Poll, Stream};
 use std::net::SocketAddr;
 use stun_codec::Attribute;
@@ -24,7 +25,7 @@ impl<A> Client<A> {
         let channel_driver = ChannelDriver {
             spawner: spawner.clone(),
             channel: Ok(channel),
-            command_rx,
+            command_rx: command_rx.fuse(),
         };
         spawner.spawn(channel_driver);
         Client { command_tx }
@@ -62,7 +63,7 @@ enum Command<A> {
 struct ChannelDriver<S, A, T> {
     spawner: S,
     channel: Result<Channel<A, T>>,
-    command_rx: mpsc::Receiver<Command<A>>,
+    command_rx: Fuse<mpsc::Receiver<Command<A>>>,
 }
 impl<S, A, T> ChannelDriver<S, A, T>
 where
@@ -107,7 +108,16 @@ where
                 self.handle_command(command);
             } else {
                 // All clients have dropped
-                return Ok(Async::Ready(()));
+                let outstanding_transactions = self
+                    .channel
+                    .as_mut()
+                    .ok()
+                    .map_or(0, |c| c.outstanding_transactions());
+                if outstanding_transactions == 0 {
+                    return Ok(Async::Ready(()));
+                } else {
+                    break;
+                }
             }
         }
         while self.channel.is_ok() {
