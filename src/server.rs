@@ -438,7 +438,7 @@ impl HandleMessage for BindingHandler {
     ) -> Action<Response<Self::Attribute>> {
         if request.method() == rfc5389::methods::BINDING {
             let mut response = SuccessResponse::new(&request);
-            response.push_attribute(rfc5389::attributes::XorMappedAddress::new(peer).into());
+            response.add_attribute(rfc5389::attributes::XorMappedAddress::new(peer).into());
             Action::Reply(Ok(response))
         } else {
             let response = ErrorResponse::new(&request, rfc5389::errors::BadRequest.into());

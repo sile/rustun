@@ -2,6 +2,7 @@ use bytecodec;
 use fibers::sync::oneshot::MonitorError;
 use std::io;
 use std::sync::mpsc::SendError;
+use stun_codec::rfc5389::attributes::ErrorCode;
 use stun_codec::AttributeType;
 use trackable::error::{self, ErrorKindExt, TrackableError};
 
@@ -42,6 +43,13 @@ impl From<MessageError> for Error {
     fn from(f: MessageError) -> Self {
         ErrorKind::InvalidMessage(f.kind().clone())
             .takes_over(f)
+            .into()
+    }
+}
+impl From<ErrorCode> for Error {
+    fn from(f: ErrorCode) -> Self {
+        ErrorKind::Other
+            .cause(format!("STUN error response: {:?}", f))
             .into()
     }
 }

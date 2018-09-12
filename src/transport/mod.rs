@@ -19,6 +19,11 @@ mod udp;
 pub type StunUdpTransporter<A> =
     RetransmitTransporter<A, UdpTransporter<MessageDecoder<A>, MessageEncoder<A>>>;
 
+/// A variant of [`TcpTransporter`] that can be used as the transport layer for STUN.
+///
+/// [`TcpTransporter`]: ./struct.TcpTransporter.html
+pub type StunTcpTransporter<A> = TcpTransporter<MessageDecoder<A>, MessageEncoder<A>>;
+
 /// Transport layer abstraction.
 pub trait Transport {
     /// The decoder used for decoding incoming messages.

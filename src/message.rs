@@ -129,8 +129,8 @@ impl<A: Attribute> Request<A> {
     }
 
     /// Adds the given attribute to the tail of the attributes in the message.
-    pub fn push_attribute(&mut self, attribute: A) {
-        self.0.push_attribute(attribute);
+    pub fn add_attribute(&mut self, attribute: A) {
+        self.0.add_attribute(attribute);
     }
 
     /// Takes ownership of this instance, and returns the internal message.
@@ -197,8 +197,8 @@ impl<A: Attribute> Indication<A> {
     }
 
     /// Adds the given attribute to the tail of the attributes in the message.
-    pub fn push_attribute(&mut self, attribute: A) {
-        self.0.push_attribute(attribute);
+    pub fn add_attribute(&mut self, attribute: A) {
+        self.0.add_attribute(attribute);
     }
 
     /// Takes ownership of this instance, and returns the internal message.
@@ -265,8 +265,8 @@ impl<A: Attribute> SuccessResponse<A> {
     }
 
     /// Adds the given attribute to the tail of the attributes in the message.
-    pub fn push_attribute(&mut self, attribute: A) {
-        self.0.push_attribute(attribute);
+    pub fn add_attribute(&mut self, attribute: A) {
+        self.0.add_attribute(attribute);
     }
 
     /// Takes ownership of this instance, and returns the internal message.
@@ -299,7 +299,7 @@ impl<A: Attribute> ErrorResponse<A> {
             request.method(),
             request.transaction_id(),
         );
-        message.push_attribute(error.into());
+        message.add_attribute(error.into());
         ErrorResponse(message)
     }
 
@@ -346,8 +346,8 @@ impl<A: Attribute> ErrorResponse<A> {
     }
 
     /// Adds the given attribute to the tail of the attributes in the message.
-    pub fn push_attribute(&mut self, attribute: A) {
-        self.0.push_attribute(attribute);
+    pub fn add_attribute(&mut self, attribute: A) {
+        self.0.add_attribute(attribute);
     }
 
     /// Takes ownership of this instance, and returns the internal message.
