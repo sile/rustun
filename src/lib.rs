@@ -71,6 +71,7 @@ extern crate factory;
 extern crate fibers;
 #[cfg(test)]
 extern crate fibers_global;
+extern crate fibers_timeout_queue;
 extern crate futures;
 extern crate rand;
 extern crate stun_codec;
@@ -86,10 +87,9 @@ pub mod server;
 pub mod transport;
 
 mod error;
-mod timeout_queue;
 
 /// A specialized `Result` type for this crate.
-pub type Result<T> = ::std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {

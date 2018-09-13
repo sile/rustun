@@ -1,5 +1,6 @@
 //! Channel for sending and receiving STUN messages.
 use fibers::sync::oneshot;
+use fibers_timeout_queue::TimeoutQueue;
 use futures::{Async, Future, Poll, Stream};
 use std;
 use std::collections::HashMap;
@@ -12,7 +13,6 @@ use message::{
     ErrorResponse, Indication, InvalidMessage, MessageError, MessageErrorKind, Request, Response,
     SuccessResponse,
 };
-use timeout_queue::TimeoutQueue;
 use transport::StunTransport;
 use Error;
 
@@ -152,7 +152,7 @@ where
         let transactions = &mut self.transactions;
         while let Some((peer, id)) = self
             .timeout_queue
-            .pop_expired(|entry| transactions.contains_key(entry))
+            .filter_pop(|entry| transactions.contains_key(entry))
         {
             if let Some((_, tx)) = transactions.remove(&(peer, id)) {
                 let e = track!(MessageErrorKind::Timeout.error());

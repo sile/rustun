@@ -18,6 +18,7 @@ codecov = {repository = "sile/rustun"}
 bytecodec = "0.4"
 factory = "0.1"
 fibers = "0.1"
+fibers_timeout_queue = "0.1"
 futures = "0.1"
 rand = "0.5"
 stun_codec = "0.1"

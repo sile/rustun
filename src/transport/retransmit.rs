@@ -1,3 +1,4 @@
+use fibers_timeout_queue::TimeoutQueue;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
@@ -5,7 +6,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use stun_codec::{Attribute, DecodedMessage, Message, MessageClass, TransactionId};
 
 use super::{StunTransport, Transport, UnreliableTransport};
-use timeout_queue::TimeoutQueue;
 use Result;
 
 /// [`RetransmitTransporter`] builder.
@@ -218,7 +218,7 @@ where
 
     fn poll_timeout(&mut self) -> Option<TimeoutEntry<A>> {
         let peers = &self.peers;
-        self.timeout_queue.pop_expired(|entry| {
+        self.timeout_queue.filter_pop(|entry| {
             if let TimeoutEntry::Retransmit { peer, request, .. } = entry {
                 peers.get(&peer).map_or(false, |p| {
                     p.transactions.contains(&request.transaction_id())
