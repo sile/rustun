@@ -15,7 +15,7 @@
 //! use rustun::client::Client;
 //! use rustun::message::Request;
 //! use rustun::server::{BindingHandler, UdpServer};
-//! use rustun::transport::{RetransmitTransporter, UdpTransporter};
+//! use rustun::transport::{RetransmitTransporter, UdpTransporter, StunUdpTransporter};
 //! use stun_codec::rfc5389;
 //!
 //! # fn main() -> Result<(), trackable::error::MainError> {
@@ -30,7 +30,7 @@
 //! let response = UdpTransporter::bind(client_addr)
 //!     .map(RetransmitTransporter::new)
 //!     .map(Channel::new)
-//!     .and_then(move |channel| {
+//!     .and_then(move |channel: Channel<_, StunUdpTransporter<_>>| {
 //!         let client = Client::new(&fibers_global::handle(), channel);
 //!         let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
 //!         client.call(server_addr, request)
@@ -105,7 +105,7 @@ mod tests {
     use client::Client;
     use message::Request;
     use server::{BindingHandler, TcpServer, UdpServer};
-    use transport::{RetransmitTransporter, TcpTransporter, UdpTransporter};
+    use transport::{RetransmitTransporter, StunUdpTransporter, TcpTransporter, UdpTransporter};
 
     #[test]
     fn basic_udp_test() -> Result<(), MainError> {
@@ -118,7 +118,7 @@ mod tests {
         let response = UdpTransporter::bind(client_addr)
             .map(RetransmitTransporter::new)
             .map(Channel::new)
-            .and_then(move |channel| {
+            .and_then(move |channel: Channel<_, StunUdpTransporter<_>>| {
                 let client = Client::new(&fibers_global::handle(), channel);
                 let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
                 client.call(server_addr, request)

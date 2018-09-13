@@ -46,13 +46,13 @@ impl UdpTransporterBuilder {
 
     /// Starts binding to the specified address and will makes
     /// a new `UdpTransporter` instance if the operation is succeeded.
-    pub fn bind<D, E>(
+    pub fn bind<E, D>(
         &self,
         addr: SocketAddr,
-    ) -> impl Future<Item = UdpTransporter<D, E>, Error = Error>
+    ) -> impl Future<Item = UdpTransporter<E, D>, Error = Error>
     where
-        D: Decode + Default,
         E: Encode + Default,
+        D: Decode + Default,
     {
         let builder = self.clone();
         UdpSocket::bind(addr)
@@ -61,10 +61,10 @@ impl UdpTransporterBuilder {
     }
 
     /// Makes a new `UdpTransporter` instance with the given settings.
-    pub fn finish<D, E>(&self, socket: UdpSocket) -> UdpTransporter<D, E>
+    pub fn finish<E, D>(&self, socket: UdpSocket) -> UdpTransporter<E, D>
     where
-        D: Decode + Default,
         E: Encode + Default,
+        D: Decode + Default,
     {
         let recv_from = socket.clone().recv_from(vec![0; self.recv_buf_size]);
         UdpTransporter {
@@ -90,7 +90,7 @@ impl Default for UdpTransporterBuilder {
 ///
 /// [`Transport`]: ./trait.Transport.html
 #[derive(Debug)]
-pub struct UdpTransporter<D: Decode, E: Encode> {
+pub struct UdpTransporter<E: Encode, D: Decode> {
     socket: UdpSocket,
     decoder: D,
     encoder: E,
@@ -99,10 +99,10 @@ pub struct UdpTransporter<D: Decode, E: Encode> {
     recv_from: RecvFrom<Vec<u8>>,
     last_error: Option<Error>,
 }
-impl<D, E> UdpTransporter<D, E>
+impl<E, D> UdpTransporter<E, D>
 where
-    D: Decode + Default,
     E: Encode + Default,
+    D: Decode + Default,
 {
     /// Starts binding to the specified address and will makes
     /// a new `UdpTransporter` instance if the operation is succeeded.
@@ -179,22 +179,22 @@ where
         }
     }
 }
-impl<D, E> From<UdpSocket> for UdpTransporter<D, E>
+impl<E, D> From<UdpSocket> for UdpTransporter<E, D>
 where
-    D: Decode + Default,
     E: Encode + Default,
+    D: Decode + Default,
 {
     fn from(f: UdpSocket) -> Self {
         UdpTransporterBuilder::default().finish(f)
     }
 }
-impl<D, E> Transport for UdpTransporter<D, E>
+impl<E, D> Transport for UdpTransporter<E, D>
 where
-    D: Decode + Default,
     E: Encode + Default,
+    D: Decode + Default,
 {
-    type Decoder = D;
-    type Encoder = E;
+    type SendItem = E::Item;
+    type RecvItem = D::Item;
 
     fn send(&mut self, peer: SocketAddr, item: E::Item) {
         if self.last_error.is_some() {
@@ -225,8 +225,8 @@ where
         Ok(false)
     }
 }
-impl<D, E> UnreliableTransport for UdpTransporter<D, E>
+impl<E, D> UnreliableTransport for UdpTransporter<E, D>
 where
-    D: Decode + Default,
     E: Encode + Default,
+    D: Decode + Default,
 {}

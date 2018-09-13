@@ -24,7 +24,7 @@ use rustun::channel::Channel;
 use rustun::client::Client;
 use rustun::message::Request;
 use rustun::server::{BindingHandler, UdpServer};
-use rustun::transport::{RetransmitTransporter, UdpTransporter};
+use rustun::transport::{RetransmitTransporter, UdpTransporter, StunUdpTransporter};
 use stun_codec::rfc5389;
 
 let server_addr = "127.0.0.1:3478".parse().unwrap();
@@ -38,7 +38,7 @@ fibers_global::spawn(server.map(|_| ()).map_err(|e| panic!("{}", e)));
 let response = UdpTransporter::bind(client_addr)
     .map(RetransmitTransporter::new)
     .map(Channel::new)
-    .and_then(move |channel| {
+    .and_then(move |channel: Channel<_, StunUdpTransporter<_>>| {
         let client = Client::new(&fibers_global::handle(), channel);
         let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
         client.call(server_addr, request)

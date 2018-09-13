@@ -14,7 +14,7 @@ use {Error, ErrorKind, Result};
 ///
 /// [`Transport`]: ./trait.Transport.html
 #[derive(Debug)]
-pub struct TcpTransporter<D: Decode, E: Encode> {
+pub struct TcpTransporter<E: Encode, D: Decode> {
     stream: BufferedIo<TcpStream>,
     peer: SocketAddr,
     decoder: D,
@@ -22,10 +22,10 @@ pub struct TcpTransporter<D: Decode, E: Encode> {
     outgoing_queue: VecDeque<E::Item>,
     last_error: Option<Error>,
 }
-impl<D, E> TcpTransporter<D, E>
+impl<E, D> TcpTransporter<E, D>
 where
-    D: Decode + Default,
     E: Encode + Default,
+    D: Decode + Default,
 {
     /// Starts connecting to the given peer and
     /// will return a new `TcpTransporter` instance if the connect operation is succeeded.
@@ -134,10 +134,10 @@ where
         Ok(None)
     }
 }
-impl<D, E> From<(SocketAddr, TcpStream)> for TcpTransporter<D, E>
+impl<E, D> From<(SocketAddr, TcpStream)> for TcpTransporter<E, D>
 where
-    D: Decode + Default,
     E: Encode + Default,
+    D: Decode + Default,
 {
     fn from((peer, stream): (SocketAddr, TcpStream)) -> Self {
         let _ = stream.set_nodelay(true);
@@ -151,13 +151,13 @@ where
         }
     }
 }
-impl<D, E> Transport for TcpTransporter<D, E>
+impl<E, D> Transport for TcpTransporter<E, D>
 where
-    D: Decode + Default,
     E: Encode + Default,
+    D: Decode + Default,
 {
-    type Decoder = D;
-    type Encoder = E;
+    type SendItem = E::Item;
+    type RecvItem = D::Item;
 
     fn send(&mut self, peer: SocketAddr, item: E::Item) {
         if self.last_error.is_some() {
@@ -200,7 +200,7 @@ where
         }
     }
 }
-impl<A> StunTransport<A> for TcpTransporter<MessageDecoder<A>, MessageEncoder<A>>
+impl<A> StunTransport<A> for TcpTransporter<MessageEncoder<A>, MessageDecoder<A>>
 where
     A: Attribute,
 {

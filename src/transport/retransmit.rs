@@ -1,9 +1,8 @@
-use bytecodec::{Decode, Encode};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use stun_codec::{Attribute, Message, MessageClass, MessageDecoder, MessageEncoder, TransactionId};
+use stun_codec::{Attribute, DecodedMessage, Message, MessageClass, TransactionId};
 
 use super::{StunTransport, Transport, UnreliableTransport};
 use timeout_queue::TimeoutQueue;
@@ -120,7 +119,7 @@ impl RetransmitTransporterBuilder {
     pub fn finish<A, T>(&self, inner: T) -> RetransmitTransporter<A, T>
     where
         A: Attribute,
-        T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
+        T: UnreliableTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
     {
         RetransmitTransporter {
             inner,
@@ -164,7 +163,7 @@ pub struct RetransmitTransporter<A, T> {
 impl<A, T> RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
+    T: UnreliableTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
     /// Makes a new `RetransmitTransporter` instance.
     ///
@@ -258,12 +257,12 @@ where
 impl<A, T> Transport for RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
+    T: UnreliableTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
-    type Decoder = MessageDecoder<A>;
-    type Encoder = MessageEncoder<A>;
+    type SendItem = Message<A>;
+    type RecvItem = DecodedMessage<A>;
 
-    fn send(&mut self, peer: SocketAddr, item: <Self::Encoder as Encode>::Item) {
+    fn send(&mut self, peer: SocketAddr, item: Self::SendItem) {
         if item.class() == MessageClass::Request {
             self.start_transaction(peer, item, true);
         } else {
@@ -271,7 +270,7 @@ where
         }
     }
 
-    fn recv(&mut self) -> Option<(SocketAddr, <Self::Decoder as Decode>::Item)> {
+    fn recv(&mut self) -> Option<(SocketAddr, Self::RecvItem)> {
         self.inner.recv()
     }
 
@@ -305,7 +304,7 @@ where
 impl<A, T> StunTransport<A> for RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>,
+    T: UnreliableTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
     fn finish_transaction(&mut self, peer: SocketAddr, transaction_id: TransactionId) {
         if let Some(p) = self.peers.get_mut(&peer) {

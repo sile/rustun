@@ -11,7 +11,7 @@ use futures::Future;
 use rustun::channel::Channel;
 use rustun::client::Client;
 use rustun::message::Request;
-use rustun::transport::{RetransmitTransporter, UdpTransporter};
+use rustun::transport::{RetransmitTransporter, StunUdpTransporter, UdpTransporter};
 use std::net::ToSocketAddrs;
 use stun_codec::rfc5389;
 use trackable::error::Failed;
@@ -43,7 +43,7 @@ fn main() -> Result<(), MainError> {
     let response = UdpTransporter::bind(local_addr)
         .map(RetransmitTransporter::new)
         .map(Channel::new)
-        .and_then(move |channel| {
+        .and_then(move |channel: Channel<_, StunUdpTransporter<_>>| {
             let client = Client::new(&fibers_global::handle(), channel);
             let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
             client.call(peer_addr, request)

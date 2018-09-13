@@ -1,7 +1,8 @@
 //! Transport layer abstractions and its built-in implementations.
-use bytecodec::{Decode, Encode};
 use std::net::SocketAddr;
-use stun_codec::{Attribute, MessageDecoder, MessageEncoder, TransactionId};
+use stun_codec::{
+    Attribute, DecodedMessage, Message, MessageDecoder, MessageEncoder, TransactionId,
+};
 
 use Result;
 
@@ -17,26 +18,26 @@ mod udp;
 ///
 /// [`UdpTransporter`]: ./struct.UdpTransporter.html
 pub type StunUdpTransporter<A> =
-    RetransmitTransporter<A, UdpTransporter<MessageDecoder<A>, MessageEncoder<A>>>;
+    RetransmitTransporter<A, UdpTransporter<MessageEncoder<A>, MessageDecoder<A>>>;
 
 /// A variant of [`TcpTransporter`] that can be used as the transport layer for STUN.
 ///
 /// [`TcpTransporter`]: ./struct.TcpTransporter.html
-pub type StunTcpTransporter<A> = TcpTransporter<MessageDecoder<A>, MessageEncoder<A>>;
+pub type StunTcpTransporter<A> = TcpTransporter<MessageEncoder<A>, MessageDecoder<A>>;
 
 /// Transport layer abstraction.
 pub trait Transport {
-    /// The decoder used for decoding incoming messages.
-    type Decoder: Decode;
+    /// Outgoing message.
+    type SendItem;
 
-    /// The encoder used for encoding outgoing messages.
-    type Encoder: Encode;
+    /// Incoming message.
+    type RecvItem;
 
     /// Sends the given message to the destination peer.
-    fn send(&mut self, peer: SocketAddr, message: <Self::Encoder as Encode>::Item);
+    fn send(&mut self, peer: SocketAddr, message: Self::SendItem);
 
     /// Tries to receive a message.
-    fn recv(&mut self) -> Option<(SocketAddr, <Self::Decoder as Decode>::Item)>;
+    fn recv(&mut self) -> Option<(SocketAddr, Self::RecvItem)>;
 
     /// Executes one unit of work needed for sending and receiving messages.
     ///
@@ -50,8 +51,7 @@ pub trait Transport {
 pub trait UnreliableTransport: Transport {}
 
 /// This trait allows the implementation to be used as the transport layer for STUN.
-pub trait StunTransport<A>:
-    Transport<Decoder = MessageDecoder<A>, Encoder = MessageEncoder<A>>
+pub trait StunTransport<A>: Transport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>
 where
     A: Attribute,
 {
