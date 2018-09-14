@@ -26,6 +26,7 @@
 //! [RFC 5389 -- 3. Overview of Operation]: https://tools.ietf.org/html/rfc5389#section-3
 use rand;
 use std;
+use stun_codec::convert::TryAsRef;
 use stun_codec::rfc5389::attributes::ErrorCode;
 use stun_codec::{Attribute, Message, MessageClass, Method, TransactionId};
 
@@ -123,6 +124,17 @@ impl<A: Attribute> Request<A> {
         self.0.transaction_id()
     }
 
+    /// Returns a reference to the first occurance of `T` attribute in the attributes of the message.
+    ///
+    /// If there is no such attribute, this method will return `None`.
+    pub fn get_attribute<T>(&self) -> Option<&T>
+    where
+        T: Attribute,
+        A: TryAsRef<T>,
+    {
+        self.0.get_attribute()
+    }
+
     /// Returns an iterator that iterates over the known attributes in the message.
     pub fn attributes(&self) -> impl Iterator<Item = &A> {
         self.0.attributes()
@@ -191,6 +203,17 @@ impl<A: Attribute> Indication<A> {
         self.0.transaction_id()
     }
 
+    /// Returns a reference to the first occurance of `T` attribute in the attributes of the message.
+    ///
+    /// If there is no such attribute, this method will return `None`.
+    pub fn get_attribute<T>(&self) -> Option<&T>
+    where
+        T: Attribute,
+        A: TryAsRef<T>,
+    {
+        self.0.get_attribute()
+    }
+
     /// Returns an iterator that iterates over the known attributes in the message.
     pub fn attributes(&self) -> impl Iterator<Item = &A> {
         self.0.attributes()
@@ -257,6 +280,17 @@ impl<A: Attribute> SuccessResponse<A> {
     /// Returns the transaction ID of the message.
     pub fn transaction_id(&self) -> TransactionId {
         self.0.transaction_id()
+    }
+
+    /// Returns a reference to the first occurance of `T` attribute in the attributes of the message.
+    ///
+    /// If there is no such attribute, this method will return `None`.
+    pub fn get_attribute<T>(&self) -> Option<&T>
+    where
+        T: Attribute,
+        A: TryAsRef<T>,
+    {
+        self.0.get_attribute()
     }
 
     /// Returns an iterator that iterates over the known attributes in the message.
@@ -340,6 +374,17 @@ impl<A: Attribute> ErrorResponse<A> {
         self.0.transaction_id()
     }
 
+    /// Returns a reference to the first occurance of `T` attribute in the attributes of the message.
+    ///
+    /// If there is no such attribute, this method will return `None`.
+    pub fn get_attribute<T>(&self) -> Option<&T>
+    where
+        T: Attribute,
+        A: TryAsRef<T>,
+    {
+        self.0.get_attribute()
+    }
+
     /// Returns an iterator that iterates over the known attributes in the message.
     pub fn attributes(&self) -> impl Iterator<Item = &A> {
         self.0.attributes()
@@ -375,8 +420,7 @@ fn check_unknown_attributes<A: Attribute>(message: &Message<A>) -> MessageResult
             } else {
                 None
             }
-        })
-        .collect::<Vec<_>>();
+        }).collect::<Vec<_>>();
     track_assert!(
         required_unknowns.is_empty(),
         MessageErrorKind::UnknownAttributes(required_unknowns)
