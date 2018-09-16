@@ -5,31 +5,32 @@ use stun_codec::{Attribute, DecodedMessage, Message, TransactionId};
 
 use super::StunTransport;
 
+/// TCP transport layer that can be used for STUN.
 #[derive(Debug)]
-pub struct StunTcpTransporter<A, T>
-where
-    T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
-{
+pub struct StunTcpTransporter<T> {
     inner: T,
 }
-impl<A, T> StunTcpTransporter<A, T>
+impl<A, T> StunTcpTransporter<T>
 where
     A: Attribute,
     T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
+    /// Makes a new `StunTcpTransporter` instance.
     pub fn new(inner: T) -> Self {
         StunTcpTransporter { inner }
     }
 
+    /// Returns a reference to the inner transporter.
     pub fn inner_ref(&self) -> &T {
         &self.inner
     }
 
+    /// Returns a mutable reference to the inner transporter.
     pub fn inner_mut(&mut self) -> &mut T {
         &mut self.inner
     }
 }
-impl<A, T> Transport for StunTcpTransporter<A, T>
+impl<A, T> Transport for StunTcpTransporter<T>
 where
     A: Attribute,
     T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
@@ -60,7 +61,7 @@ where
         }
     }
 }
-impl<A, T> StunTransport<A> for StunTcpTransporter<A, T>
+impl<A, T> StunTransport<A> for StunTcpTransporter<T>
 where
     A: Attribute,
     T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,

@@ -223,7 +223,6 @@ where
                                         };
                                     let transporter =
                                         StunTcpTransporter::<
-                                            _,
                                             TcpTransporter<MessageEncoder<_>, MessageDecoder<_>>,
                                         >::new(transporter);
                                     let channel = Channel::new(transporter);
