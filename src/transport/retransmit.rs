@@ -1,12 +1,12 @@
 use fibers_timeout_queue::TimeoutQueue;
+use fibers_transport::{PollRecv, PollSend, Result, Transport, UdpTransport};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use stun_codec::{Attribute, DecodedMessage, Message, MessageClass, TransactionId};
 
-use super::{StunTransport, Transport, UnreliableTransport};
-use Result;
+use super::StunTransport;
 
 /// [`RetransmitTransporter`] builder.
 ///
@@ -119,7 +119,7 @@ impl RetransmitTransporterBuilder {
     pub fn finish<A, T>(&self, inner: T) -> RetransmitTransporter<A, T>
     where
         A: Attribute,
-        T: UnreliableTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
+        T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
     {
         RetransmitTransporter {
             inner,
@@ -163,7 +163,7 @@ pub struct RetransmitTransporter<A, T> {
 impl<A, T> RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
+    T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
     /// Makes a new `RetransmitTransporter` instance.
     ///
@@ -195,7 +195,12 @@ where
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
-    fn start_transaction(&mut self, peer: SocketAddr, request: Message<A>, first: bool) {
+    fn start_transaction(
+        &mut self,
+        peer: SocketAddr,
+        request: Message<A>,
+        first: bool,
+    ) -> Result<()> {
         if !self.peers.contains_key(&peer) {
             self.peers.insert(peer, PeerState::new(peer, self.rto));
         }
@@ -210,10 +215,11 @@ where
         } else if self.peers[&peer].transactions.len() >= self.max_outstanding_transactions {
             self.peer_mut(peer).pending(request, first);
         } else {
-            self.inner.send(peer, request.clone());
+            track!(self.inner.start_send(peer, request.clone()))?;
             let timeout = self.peer_mut(peer).start_transaction(request);
             self.timeout_queue.push(timeout.0, timeout.1);
         }
+        Ok(())
     }
 
     fn poll_timeout(&mut self) -> Option<TimeoutEntry<A>> {
@@ -229,19 +235,25 @@ where
         })
     }
 
-    fn handle_pending_request(&mut self, peer: SocketAddr) {
+    fn handle_pending_request(&mut self, peer: SocketAddr) -> Result<()> {
         if !self.peers.contains_key(&peer) {
-            return;
+            return Ok(());
         }
         if let Some(request) = self.peer_mut(peer).pop_pending_request() {
-            self.start_transaction(peer, request, false);
+            track!(self.start_transaction(peer, request, false))?;
         }
         if self.peers[&peer].is_idle() {
             self.peers.remove(&peer);
         }
+        Ok(())
     }
 
-    fn handle_retransmit(&mut self, peer: SocketAddr, request: Message<A>, rto: Duration) {
+    fn handle_retransmit(
+        &mut self,
+        peer: SocketAddr,
+        request: Message<A>,
+        rto: Duration,
+    ) -> Result<()> {
         if let Some(p) = self.peers.get_mut(&peer) {
             if let Some(request) = p.retransmit(
                 request,
@@ -249,32 +261,30 @@ where
                 self.rto_cache_duration,
                 &mut self.timeout_queue,
             ) {
-                self.inner.send(peer, request);
+                track!(self.inner.start_send(peer, request))?;
             }
         }
+        Ok(())
     }
 }
 impl<A, T> Transport for RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
+    T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
+    type PeerAddr = SocketAddr;
     type SendItem = Message<A>;
     type RecvItem = DecodedMessage<A>;
 
-    fn send(&mut self, peer: SocketAddr, item: Self::SendItem) {
+    fn start_send(&mut self, peer: SocketAddr, item: Self::SendItem) -> Result<()> {
         if item.class() == MessageClass::Request {
-            self.start_transaction(peer, item, true);
+            track!(self.start_transaction(peer, item, true))
         } else {
-            self.inner.send(peer, item);
+            track!(self.inner.start_send(peer, item))
         }
     }
 
-    fn recv(&mut self) -> Option<(SocketAddr, Self::RecvItem)> {
-        self.inner.recv()
-    }
-
-    fn run_once(&mut self) -> Result<bool> {
+    fn poll_send(&mut self) -> PollSend {
         while let Some(entry) = self.poll_timeout() {
             match entry {
                 TimeoutEntry::Retransmit {
@@ -282,7 +292,7 @@ where
                     request,
                     next_rto,
                 } => {
-                    self.handle_retransmit(peer, request, next_rto);
+                    track!(self.handle_retransmit(peer, request, next_rto))?;
                 }
                 TimeoutEntry::ExpireRtoCache { peer, cached_rto } => {
                     if let Some(p) = self.peers.get_mut(&peer) {
@@ -293,24 +303,28 @@ where
                 }
                 TimeoutEntry::AllowNextRequest { peer } => {
                     self.peer_mut(peer).waiting = false;
-                    self.handle_pending_request(peer);
+                    track!(self.handle_pending_request(peer))?;
                 }
             }
         }
 
-        track!(self.inner.run_once())
+        track!(self.inner.poll_send())
+    }
+
+    fn poll_recv(&mut self) -> PollRecv<(Self::PeerAddr, Self::RecvItem)> {
+        track!(self.inner.poll_recv())
     }
 }
 impl<A, T> StunTransport<A> for RetransmitTransporter<A, T>
 where
     A: Attribute,
-    T: UnreliableTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
+    T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
     fn finish_transaction(&mut self, peer: SocketAddr, transaction_id: TransactionId) {
         if let Some(p) = self.peers.get_mut(&peer) {
             p.finish_transaction(transaction_id);
         }
-        self.handle_pending_request(peer);
+        // TODO: track!(self.handle_pending_request(peer))?;
     }
 }
 

@@ -11,19 +11,18 @@ use fibers::net::streams::Incoming;
 use fibers::net::{TcpListener, UdpSocket};
 use fibers::sync::mpsc;
 use fibers::{BoxSpawn, Spawn};
+use fibers_transport::{TcpTransporter, UdpTransporter};
 use futures::future::Either;
 use futures::{self, Async, Future, Poll, Stream};
 use std::fmt;
 use std::net::SocketAddr;
 use stun_codec::rfc5389;
-use stun_codec::Attribute;
+use stun_codec::{Attribute, MessageDecoder, MessageEncoder};
 
 use channel::{Channel, RecvMessage};
 use message::{ErrorResponse, Indication, InvalidMessage, Request, Response, SuccessResponse};
-use transport::{
-    RetransmitTransporter, StunTransport, StunUdpTransporter, TcpTransporter, UdpTransporter,
-};
-use {Error, ErrorKind};
+use transport::{StunTcpTransporter, StunTransport, StunUdpTransporter};
+use {Error, ErrorKind, Result};
 
 /// The default TCP and UDP port for STUN.
 pub const DEFAULT_PORT: u16 = 3478;
@@ -64,7 +63,13 @@ enum UdpServerInner<H: HandleMessage> {
         handler: Option<H>,
     },
     Running {
-        driver: HandlerDriver<H, StunUdpTransporter<H::Attribute>>,
+        driver: HandlerDriver<
+            H,
+            StunUdpTransporter<
+                H::Attribute,
+                UdpTransporter<MessageEncoder<H::Attribute>, MessageDecoder<H::Attribute>>,
+            >,
+        >,
     },
 }
 impl<H: HandleMessage> Future for UdpServerInner<H> {
@@ -80,7 +85,8 @@ impl<H: HandleMessage> Future for UdpServerInner<H> {
                     handler,
                 } => {
                     if let Async::Ready(socket) = track!(future.poll().map_err(Error::from))? {
-                        let transporter = RetransmitTransporter::new(UdpTransporter::from(socket));
+                        let transporter =
+                            StunUdpTransporter::new(track!(UdpTransporter::from_socket(socket))?);
                         let channel = Channel::new(transporter);
                         let driver = HandlerDriver::new(
                             spawner.take().expect("never fails"),
@@ -150,6 +156,7 @@ where
     }
 }
 
+// TODO: fibers_transport::TcpListener
 enum TcpServerInner<S, H> {
     Binding {
         future: TcpListenerBind,
@@ -197,7 +204,7 @@ where
                     handler_factory,
                 } => {
                     if let Async::Ready(client) = track!(incoming.poll().map_err(Error::from))? {
-                        if let Some((future, addr)) = client {
+                        if let Some((future, _)) = client {
                             let boxed_spawner = spawner.clone().boxed();
                             let mut handler = handler_factory.create();
                             let future = future.then(move |result| match result {
@@ -207,7 +214,18 @@ where
                                     Either::A(futures::failed(e))
                                 }
                                 Ok(stream) => {
-                                    let transporter = TcpTransporter::from((addr, stream));
+                                    let transporter =
+                                        match track!(TcpTransporter::from_stream(stream)) {
+                                            Ok(t) => t,
+                                            Err(e) => {
+                                                return Either::A(futures::failed(Error::from(e)))
+                                            }
+                                        };
+                                    let transporter =
+                                        StunTcpTransporter::<
+                                            _,
+                                            TcpTransporter<MessageEncoder<_>, MessageDecoder<_>>,
+                                        >::new(transporter);
                                     let channel = Channel::new(transporter);
                                     Either::B(HandlerDriver::new(boxed_spawner, handler, channel))
                                 }
@@ -331,12 +349,17 @@ where
         }
     }
 
-    fn handle_message(&mut self, peer: SocketAddr, message: RecvMessage<H::Attribute>) {
+    fn handle_message(
+        &mut self,
+        peer: SocketAddr,
+        message: RecvMessage<H::Attribute>,
+    ) -> Result<()> {
         match message {
             RecvMessage::Indication(m) => self.handle_indication(peer, m),
-            RecvMessage::Request(m) => self.handle_request(peer, m),
-            RecvMessage::Invalid(m) => self.handle_invalid_message(peer, m),
+            RecvMessage::Request(m) => track!(self.handle_request(peer, m))?,
+            RecvMessage::Invalid(m) => track!(self.handle_invalid_message(peer, m))?,
         }
+        Ok(())
     }
 
     fn handle_indication(&mut self, peer: SocketAddr, indication: Indication<H::Attribute>) {
@@ -347,11 +370,11 @@ where
         }
     }
 
-    fn handle_request(&mut self, peer: SocketAddr, request: Request<H::Attribute>) {
+    fn handle_request(&mut self, peer: SocketAddr, request: Request<H::Attribute>) -> Result<()> {
         match self.handler.handle_call(peer, request) {
             Action::NoReply => {}
             Action::FutureNoReply(future) => self.spawner.spawn(future.map_err(|_| unreachable!())),
-            Action::Reply(m) => self.channel.reply(peer, m),
+            Action::Reply(m) => track!(self.channel.reply(peer, m))?,
             Action::FutureReply(future) => {
                 let tx = self.response_tx.clone();
                 self.spawner.spawn(
@@ -359,18 +382,18 @@ where
                         .map(move |response| {
                             let _ = tx.send((peer, response));
                             ()
-                        })
-                        .map_err(|_| unreachable!()),
+                        }).map_err(|_| unreachable!()),
                 );
             }
         }
+        Ok(())
     }
 
-    fn handle_invalid_message(&mut self, peer: SocketAddr, message: InvalidMessage) {
+    fn handle_invalid_message(&mut self, peer: SocketAddr, message: InvalidMessage) -> Result<()> {
         match self.handler.handle_invalid_message(peer, message) {
             Action::NoReply => {}
             Action::FutureNoReply(future) => self.spawner.spawn(future.map_err(|_| unreachable!())),
-            Action::Reply(m) => self.channel.reply(peer, m),
+            Action::Reply(m) => track!(self.channel.reply(peer, m))?,
             Action::FutureReply(future) => {
                 let tx = self.response_tx.clone();
                 self.spawner.spawn(
@@ -378,11 +401,11 @@ where
                         .map(move |response| {
                             let _ = tx.send((peer, response));
                             ()
-                        })
-                        .map_err(|_| unreachable!()),
+                        }).map_err(|_| unreachable!()),
                 );
             }
         }
+        Ok(())
     }
 }
 impl<H, T> Future for HandlerDriver<H, T>
@@ -398,24 +421,24 @@ where
         while did_something {
             did_something = false;
 
-            match track!(self.channel.poll()) {
+            match track!(self.channel.poll_recv()) {
                 Err(e) => {
                     self.handler.handle_channel_error(&e);
                     return Err(e);
                 }
                 Ok(Async::NotReady) => {}
-                Ok(Async::Ready(message)) => {
-                    if let Some((peer, message)) = message {
-                        self.handle_message(peer, message);
-                    } else {
-                        return Ok(Async::Ready(()));
-                    }
+                Ok(Async::Ready((peer, message))) => {
+                    track!(self.handle_message(peer, message))?;
                     did_something = true;
                 }
             }
+            if let Err(e) = track!(self.channel.poll_send()) {
+                self.handler.handle_channel_error(&e);
+                return Err(e);
+            }
             if let Async::Ready(item) = self.response_rx.poll().expect("never fails") {
                 let (peer, response) = item.expect("never fails");
-                self.channel.reply(peer, response);
+                track!(self.channel.reply(peer, response))?;
                 did_something = true;
             }
         }

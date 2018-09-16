@@ -91,7 +91,7 @@ where
         match command {
             Command::Cast(peer, indication) => {
                 if let Ok(channel) = self.channel.as_mut() {
-                    channel.cast(peer, indication);
+                    let _ = channel.cast(peer, indication);
                 }
             }
             Command::Call(peer, request, reply) => match self.channel {
@@ -99,12 +99,14 @@ where
                     reply.exit(Err(track!(e.clone())));
                 }
                 Ok(ref mut channel) => {
-                    let future = channel.call(peer, request).map_err(Error::from).then(
-                        move |result| {
-                            reply.exit(track!(result));
-                            Ok(())
-                        },
-                    );
+                    let future =
+                        channel
+                            .call(peer, request)
+                            .map_err(Error::from)
+                            .then(move |result| {
+                                reply.exit(track!(result));
+                                Ok(())
+                            });
                     self.spawner.spawn(future);
                 }
             },
@@ -138,19 +140,23 @@ where
                 }
             }
         }
+
         while self.channel.is_ok() {
-            match track!(self.channel.as_mut().expect("never fails").poll()) {
+            match track!(self.channel.as_mut().expect("never fails").poll_recv()) {
                 Err(e) => {
                     self.channel = Err(e);
-                }
-                Ok(Async::NotReady) => {
                     break;
                 }
-                Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
-                Ok(Async::Ready(Some(_message))) => {
+                Ok(Async::NotReady) => {}
+                Ok(Async::Ready(_message)) => {
                     // All received messages are ignored
+                    continue;
                 }
             }
+            if let Err(e) = track!(self.channel.as_mut().expect("never fails").poll_send()) {
+                self.channel = Err(e);
+            }
+            break;
         }
         Ok(Async::NotReady)
     }

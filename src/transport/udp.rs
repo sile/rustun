@@ -1,232 +1,54 @@
-use bytecodec::{Decode, DecodeExt, Encode, EncodeExt};
-use fibers::net::futures::{RecvFrom, SendTo};
-use fibers::net::UdpSocket;
-use futures::{Async, Future};
-use std::collections::VecDeque;
+use fibers_transport::{PollRecv, PollSend, Result, Transport, UdpTransport};
 use std::net::SocketAddr;
+use stun_codec::{Attribute, DecodedMessage, Message, TransactionId};
 
-use super::{Transport, UnreliableTransport};
-use {Error, Result};
+use super::retransmit::RetransmitTransporter;
+use super::StunTransport;
 
-/// [`UdpTransporter`] builder.
-///
-/// [`UdpTransporter`]: ./struct.UdpTransporter.html
-#[derive(Debug, Clone)]
-pub struct UdpTransporterBuilder {
-    recv_buf_size: usize,
-}
-impl UdpTransporterBuilder {
-    /// The default maximum size of a message.
-    ///
-    /// > All STUN messages sent over UDP SHOULD be less than the path MTU, if
-    /// > known.  If the path MTU is unknown, messages SHOULD be the smaller of
-    /// > 576 bytes and the first-hop MTU for IPv4 [RFC1122] and 1280 bytes for
-    /// > IPv6 [RFC2460].  This value corresponds to the overall size of the IP
-    /// > packet.  Consequently, for IPv4, the actual STUN message would need
-    /// > to be less than **548 bytes** (576 minus 20-byte IP header, minus 8-byte
-    /// > UDP header, assuming no IP options are used).
-    /// >
-    /// > [RFC 5389 -- 7.1. Forming a Request or an Indication]
-    ///
-    /// [RFC 5389 -- 7.1. Forming a Request or an Indication]: https://tools.ietf.org/html/rfc5389#section-7.1
-    pub const DEFAULT_MAX_MESSAGE_SIZE: usize = 548;
+// TODO: bulider
 
-    /// Makes a new `UdpTransporterBuilder` instance with the default settings.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Sets the byte size of the receive buffer of the resulting instance.
-    ///
-    /// The default value is `DEFAULT_MAX_MESSAGE_SIZE`.
-    pub fn recv_buf_size(&mut self, size: usize) -> &mut Self {
-        self.recv_buf_size = size;
-        self
-    }
-
-    /// Starts binding to the specified address and will makes
-    /// a new `UdpTransporter` instance if the operation is succeeded.
-    pub fn bind<E, D>(
-        &self,
-        addr: SocketAddr,
-    ) -> impl Future<Item = UdpTransporter<E, D>, Error = Error>
-    where
-        E: Encode + Default,
-        D: Decode + Default,
-    {
-        let builder = self.clone();
-        UdpSocket::bind(addr)
-            .map(move |socket| builder.finish(socket))
-            .map_err(|e| track!(Error::from(e)))
-    }
-
-    /// Makes a new `UdpTransporter` instance with the given settings.
-    pub fn finish<E, D>(&self, socket: UdpSocket) -> UdpTransporter<E, D>
-    where
-        E: Encode + Default,
-        D: Decode + Default,
-    {
-        let recv_from = socket.clone().recv_from(vec![0; self.recv_buf_size]);
-        UdpTransporter {
-            socket,
-            decoder: D::default(),
-            encoder: E::default(),
-            outgoing_queue: VecDeque::new(),
-            send_to: None,
-            recv_from,
-            last_error: None,
-        }
-    }
-}
-impl Default for UdpTransporterBuilder {
-    fn default() -> Self {
-        UdpTransporterBuilder {
-            recv_buf_size: Self::DEFAULT_MAX_MESSAGE_SIZE,
-        }
-    }
-}
-
-/// An implementation of [`Transport`] that uses UDP as the transport layer.
-///
-/// [`Transport`]: ./trait.Transport.html
 #[derive(Debug)]
-pub struct UdpTransporter<E: Encode, D: Decode> {
-    socket: UdpSocket,
-    decoder: D,
-    encoder: E,
-    outgoing_queue: VecDeque<(SocketAddr, E::Item)>,
-    send_to: Option<SendTo<Vec<u8>>>,
-    recv_from: RecvFrom<Vec<u8>>,
-    last_error: Option<Error>,
+pub struct StunUdpTransporter<A, T> {
+    inner: RetransmitTransporter<A, T>,
 }
-impl<E, D> UdpTransporter<E, D>
+impl<A, T> StunUdpTransporter<A, T>
 where
-    E: Encode + Default,
-    D: Decode + Default,
+    A: Attribute,
+    T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
-    /// Starts binding to the specified address and will makes
-    /// a new `UdpTransporter` instance if the operation is succeeded.
-    ///
-    /// This is equivalent to `UdpTransporterBuilder::default().bind(addr)`.
-    pub fn bind(addr: SocketAddr) -> impl Future<Item = Self, Error = Error> {
-        UdpTransporterBuilder::default().bind(addr)
-    }
-
-    /// Returns the number of unsent messages in the queue of the instance.
-    pub fn message_queue_len(&self) -> usize {
-        self.outgoing_queue.len() + if self.encoder.is_idle() { 0 } else { 1 }
-    }
-
-    /// Returns a reference to the UDP socket being used by the instance.
-    pub fn socket_ref(&self) -> &UdpSocket {
-        &self.socket
-    }
-
-    /// Returns a mutable reference to the UDP socket being used by the instance.
-    pub fn socket_mut(&mut self) -> &mut UdpSocket {
-        &mut self.socket
-    }
-
-    /// Returns a reference to the decoder being used by the instance.
-    pub fn decoder_ref(&self) -> &D {
-        &self.decoder
-    }
-
-    /// Returns a mutable reference to the decoder being used by the instance.
-    pub fn decoder_mut(&mut self) -> &mut D {
-        &mut self.decoder
-    }
-
-    /// Returns a reference to the encoder being used by the instance.
-    pub fn encoder_ref(&self) -> &E {
-        &self.encoder
-    }
-
-    /// Returns a mutable reference to the encoder being used by the instance.
-    pub fn encoder_mut(&mut self) -> &mut E {
-        &mut self.encoder
-    }
-
-    fn poll_send(&mut self) -> Result<()> {
-        while track!(
-            self.send_to
-                .poll()
-                .map_err(|(_, _, e)| track!(Error::from(e)))
-        )?.is_ready()
-        {
-            if let Some((peer, item)) = self.outgoing_queue.pop_front() {
-                let bytes = track!(self.encoder.encode_into_bytes(item))?;
-                self.send_to = Some(self.socket.clone().send_to(bytes, peer));
-            } else {
-                self.send_to = None;
-                break;
-            }
-        }
-        Ok(())
-    }
-
-    fn poll_recv(&mut self) -> Result<Option<(SocketAddr, D::Item)>> {
-        if let Async::Ready((socket, buf, size, peer)) = self
-            .recv_from
-            .poll()
-            .map_err(|(_, _, e)| track!(Error::from(e)))?
-        {
-            let item = track!(self.decoder.decode_from_bytes(&buf[..size]))?;
-            self.recv_from = socket.recv_from(buf);
-            Ok(Some((peer, item)))
-        } else {
-            Ok(None)
+    pub fn new(inner: T) -> Self {
+        StunUdpTransporter {
+            inner: RetransmitTransporter::new(inner),
         }
     }
 }
-impl<E, D> From<UdpSocket> for UdpTransporter<E, D>
+impl<A, T> Transport for StunUdpTransporter<A, T>
 where
-    E: Encode + Default,
-    D: Decode + Default,
+    A: Attribute,
+    T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
-    fn from(f: UdpSocket) -> Self {
-        UdpTransporterBuilder::default().finish(f)
+    type PeerAddr = SocketAddr;
+    type SendItem = Message<A>;
+    type RecvItem = DecodedMessage<A>;
+
+    fn start_send(&mut self, peer: Self::PeerAddr, item: Self::SendItem) -> Result<()> {
+        track!(self.inner.start_send(peer, item))
+    }
+
+    fn poll_send(&mut self) -> PollSend {
+        track!(self.inner.poll_send())
+    }
+
+    fn poll_recv(&mut self) -> PollRecv<(Self::PeerAddr, Self::RecvItem)> {
+        track!(self.inner.poll_recv())
     }
 }
-impl<E, D> Transport for UdpTransporter<E, D>
+impl<A, T> StunTransport<A> for StunUdpTransporter<A, T>
 where
-    E: Encode + Default,
-    D: Decode + Default,
+    A: Attribute,
+    T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
-    type SendItem = E::Item;
-    type RecvItem = D::Item;
-
-    fn send(&mut self, peer: SocketAddr, item: E::Item) {
-        if self.last_error.is_some() {
-            return;
-        }
-        self.outgoing_queue.push_back((peer, item));
-        self.last_error = self.poll_send().err();
-    }
-
-    fn recv(&mut self) -> Option<(SocketAddr, D::Item)> {
-        if self.last_error.is_some() {
-            return None;
-        }
-        match self.poll_recv() {
-            Err(e) => {
-                self.last_error = Some(e);
-                None
-            }
-            Ok(item) => item,
-        }
-    }
-
-    fn run_once(&mut self) -> Result<bool> {
-        if let Some(e) = self.last_error.take() {
-            return Err(track!(e));
-        }
-        track!(self.poll_send())?;
-        Ok(false)
+    fn finish_transaction(&mut self, peer: SocketAddr, transaction_id: TransactionId) {
+        self.inner.finish_transaction(peer, transaction_id);
     }
 }
-impl<E, D> UnreliableTransport for UdpTransporter<E, D>
-where
-    E: Encode + Default,
-    D: Decode + Default,
-{}

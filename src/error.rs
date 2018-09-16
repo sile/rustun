@@ -1,5 +1,6 @@
 use bytecodec;
 use fibers::sync::oneshot::MonitorError;
+use fibers_transport;
 use std::io;
 use std::sync::mpsc::SendError;
 use stun_codec::rfc5389::attributes::ErrorCode;
@@ -53,6 +54,12 @@ impl From<ErrorCode> for Error {
             .into()
     }
 }
+impl From<fibers_transport::Error> for Error {
+    fn from(f: fibers_transport::Error) -> Self {
+        // TODO:
+        ErrorKind::Other.takes_over(f).into()
+    }
+}
 
 /// Possible error kinds.
 #[derive(Debug, Clone)]
@@ -87,6 +94,16 @@ impl From<Error> for MessageError {
     fn from(f: Error) -> Self {
         let original_error_kind = f.kind().clone();
         track!(MessageErrorKind::Other.takes_over(f); original_error_kind).into()
+    }
+}
+impl From<fibers_transport::Error> for MessageError {
+    fn from(f: fibers_transport::Error) -> Self {
+        let original_error_kind = f.kind().clone();
+        let kind = match original_error_kind {
+            fibers_transport::ErrorKind::InvalidInput => MessageErrorKind::InvalidInput,
+            _ => MessageErrorKind::Other,
+        };
+        track!(kind.takes_over(f); original_error_kind).into()
     }
 }
 

@@ -1,7 +1,7 @@
 //! Channel for sending and receiving STUN messages.
 use fibers::sync::oneshot;
 use fibers_timeout_queue::TimeoutQueue;
-use futures::{Async, Future, Poll, Stream};
+use futures::{Async, Future, Poll};
 use std;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -10,11 +10,11 @@ use stun_codec::{Attribute, BrokenMessage, Message, MessageClass, Method, Transa
 use trackable::error::ErrorKindExt;
 
 use message::{
-    ErrorResponse, Indication, InvalidMessage, MessageError, MessageErrorKind, Request, Response,
-    SuccessResponse,
+    ErrorResponse, Indication, InvalidMessage, MessageError, MessageErrorKind, MessageResult,
+    Request, Response, SuccessResponse,
 };
 use transport::StunTransport;
-use Error;
+use {Error, ErrorKind};
 
 type Reply<A> = oneshot::Monitored<Response<A>, MessageError>;
 
@@ -105,6 +105,7 @@ where
         request: Request<A>,
     ) -> impl Future<Item = Response<A>, Error = MessageError> {
         let id = request.transaction_id();
+        let method = request.method();
         let (tx, rx) = oneshot::monitor();
         if self.transactions.contains_key(&(peer, id)) {
             let e = MessageErrorKind::InvalidInput.cause(format!(
@@ -112,25 +113,28 @@ where
                 peer, id
             ));
             tx.exit(Err(track!(e).into()));
+        } else if let Err(e) = track!(self.transporter.start_send(peer, request.into_message())) {
+            tx.exit(Err(e.into()));
         } else {
-            self.transactions.insert((peer, id), (request.method(), tx));
+            self.transactions.insert((peer, id), (method, tx));
             self.timeout_queue.push((peer, id), self.request_timeout);
-            self.transporter.send(peer, request.into_message());
         }
         rx.map_err(MessageError::from)
     }
 
     /// Sends the given indication message to the destination peer.
-    pub fn cast(&mut self, peer: SocketAddr, indication: Indication<A>) {
-        self.transporter.send(peer, indication.into_message());
+    pub fn cast(&mut self, peer: SocketAddr, indication: Indication<A>) -> MessageResult<()> {
+        track!(self.transporter.start_send(peer, indication.into_message()))?;
+        Ok(())
     }
 
     /// Replies the given response message to the destination peer.
-    pub fn reply(&mut self, peer: SocketAddr, response: Response<A>) {
+    pub fn reply(&mut self, peer: SocketAddr, response: Response<A>) -> MessageResult<()> {
         let message = response
             .map(|m| m.into_message())
             .unwrap_or_else(|m| m.into_message());
-        self.transporter.send(peer, message);
+        track!(self.transporter.start_send(peer, message))?;
+        Ok(())
     }
 
     /// Returns a reference to the transporter of the channel.
@@ -146,6 +150,24 @@ where
     /// Returns the number of the outstanding request/response transactions in the channel.
     pub fn outstanding_transactions(&self) -> usize {
         self.transactions.len()
+    }
+
+    pub fn poll_send(&mut self) -> Poll<(), Error> {
+        Ok(track!(self.transporter.poll_send())?)
+    }
+
+    pub fn poll_recv(&mut self) -> Poll<(SocketAddr, RecvMessage<A>), Error> {
+        self.handle_timeout();
+        while let Async::Ready(item) = track!(self.transporter.poll_recv())? {
+            if let Some((peer, message)) = item {
+                if let Some(item) = self.handle_message(peer, message) {
+                    return Ok(Async::Ready(item));
+                }
+            } else {
+                track_panic!(ErrorKind::Other, "Transporter unexpectedly termination");
+            }
+        }
+        Ok(Async::NotReady)
     }
 
     fn handle_timeout(&mut self) {
@@ -228,8 +250,7 @@ where
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
                     Ok(m)
-                })
-                .map(Ok);
+                }).map(Ok);
             tx.exit(result);
             None
         } else {
@@ -255,8 +276,7 @@ where
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
                     Ok(m)
-                })
-                .map(Err);
+                }).map(Err);
             tx.exit(result);
             None
         } else {
@@ -265,43 +285,6 @@ where
             let message =
                 RecvMessage::Invalid(InvalidMessage::new(method, class, transaction_id, error));
             Some(message)
-        }
-    }
-}
-impl<A, T> Stream for Channel<A, T>
-where
-    A: Attribute,
-    T: StunTransport<A>,
-{
-    type Item = (SocketAddr, RecvMessage<A>);
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.handle_timeout();
-        while let Some((peer, message)) = self.transporter.recv() {
-            if let Some(item) = self.handle_message(peer, message) {
-                return Ok(Async::Ready(Some(item)));
-            }
-        }
-
-        match track!(self.transporter.run_once()) {
-            Err(e) => {
-                let message_error = track!(MessageError::from(e.clone()));
-                for (_, (_, reply)) in self.transactions.drain() {
-                    reply.exit(Err(message_error.clone()));
-                }
-                Err(e)
-            }
-            Ok(true) => {
-                let e = MessageError::from(track!(
-                    MessageErrorKind::Other.cause("Transporter terminated")
-                ));
-                for (_, (_, reply)) in self.transactions.drain() {
-                    reply.exit(Err(e.clone()));
-                }
-                Ok(Async::Ready(None))
-            }
-            Ok(false) => Ok(Async::NotReady),
         }
     }
 }
