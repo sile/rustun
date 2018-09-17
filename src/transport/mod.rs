@@ -4,9 +4,8 @@ use std::net::SocketAddr;
 use stun_codec::{Attribute, DecodedMessage, Message, TransactionId};
 
 pub use self::tcp::StunTcpTransporter;
-pub use self::udp::StunUdpTransporter;
+pub use self::udp::{StunUdpTransporter, StunUdpTransporterBuilder};
 
-pub mod retransmit; // TODO: private
 mod tcp;
 mod udp;
 
