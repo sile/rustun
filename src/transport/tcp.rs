@@ -66,5 +66,11 @@ where
     A: Attribute,
     T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
-    fn finish_transaction(&mut self, _peer: SocketAddr, _transaction_id: TransactionId) {}
+    fn finish_transaction(
+        &mut self,
+        _peer: SocketAddr,
+        _transaction_id: TransactionId,
+    ) -> Result<()> {
+        Ok(())
+    }
 }

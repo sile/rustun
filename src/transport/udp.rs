@@ -48,7 +48,11 @@ where
     A: Attribute,
     T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
-    fn finish_transaction(&mut self, peer: SocketAddr, transaction_id: TransactionId) {
-        self.inner.finish_transaction(peer, transaction_id);
+    fn finish_transaction(
+        &mut self,
+        peer: SocketAddr,
+        transaction_id: TransactionId,
+    ) -> Result<()> {
+        track!(self.inner.finish_transaction(peer, transaction_id))
     }
 }

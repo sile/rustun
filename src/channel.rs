@@ -14,7 +14,7 @@ use message::{
     Request, Response, SuccessResponse,
 };
 use transport::StunTransport;
-use {Error, ErrorKind};
+use {Error, ErrorKind, Result};
 
 type Reply<A> = oneshot::Monitored<Response<A>, MessageError>;
 
@@ -157,10 +157,10 @@ where
     }
 
     pub fn poll_recv(&mut self) -> Poll<(SocketAddr, RecvMessage<A>), Error> {
-        self.handle_timeout();
+        track!(self.handle_timeout())?;
         while let Async::Ready(item) = track!(self.transporter.poll_recv())? {
             if let Some((peer, message)) = item {
-                if let Some(item) = self.handle_message(peer, message) {
+                if let Some(item) = track!(self.handle_message(peer, message))? {
                     return Ok(Async::Ready(item));
                 }
             } else {
@@ -170,7 +170,7 @@ where
         Ok(Async::NotReady)
     }
 
-    fn handle_timeout(&mut self) {
+    fn handle_timeout(&mut self) -> Result<()> {
         let transactions = &mut self.transactions;
         while let Some((peer, id)) = self
             .timeout_queue
@@ -180,25 +180,28 @@ where
                 let e = track!(MessageErrorKind::Timeout.error());
                 tx.exit(Err(e.into()));
             }
-            self.transporter.finish_transaction(peer, id);
+            track!(self.transporter.finish_transaction(peer, id))?;
         }
+        Ok(())
     }
 
     fn handle_message(
         &mut self,
         peer: SocketAddr,
         message: std::result::Result<Message<A>, BrokenMessage>,
-    ) -> Option<(SocketAddr, RecvMessage<A>)> {
+    ) -> Result<Option<(SocketAddr, RecvMessage<A>)>> {
         let message = match message {
             Err(broken) => Some(self.handle_broken_message(&broken)),
             Ok(message) => match message.class() {
                 MessageClass::Indication => Some(self.handle_indication(message)),
                 MessageClass::Request => Some(self.handle_request(message)),
-                MessageClass::SuccessResponse => self.handle_success_response(peer, message),
-                MessageClass::ErrorResponse => self.handle_error_response(peer, message),
+                MessageClass::SuccessResponse => {
+                    track!(self.handle_success_response(peer, message))?
+                }
+                MessageClass::ErrorResponse => track!(self.handle_error_response(peer, message))?,
             },
         };
-        message.map(|m| (peer, m))
+        Ok(message.map(|m| (peer, m)))
     }
 
     fn handle_broken_message(&self, message: &BrokenMessage) -> RecvMessage<A> {
@@ -240,25 +243,25 @@ where
         &mut self,
         peer: SocketAddr,
         message: Message<A>,
-    ) -> Option<RecvMessage<A>> {
+    ) -> Result<Option<RecvMessage<A>>> {
         let class = message.class();
         let method = message.method();
         let transaction_id = message.transaction_id();
         if let Some((method, tx)) = self.transactions.remove(&(peer, transaction_id)) {
-            self.transporter.finish_transaction(peer, transaction_id);
+            track!(self.transporter.finish_transaction(peer, transaction_id))?;
             let result = track!(SuccessResponse::from_message(message))
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
                     Ok(m)
                 }).map(Ok);
             tx.exit(result);
-            None
+            Ok(None)
         } else {
             let error =
                 track!(MessageErrorKind::UnexpectedResponse.cause("Unknown transaction ID")).into();
             let message =
                 RecvMessage::Invalid(InvalidMessage::new(method, class, transaction_id, error));
-            Some(message)
+            Ok(Some(message))
         }
     }
 
@@ -266,25 +269,25 @@ where
         &mut self,
         peer: SocketAddr,
         message: Message<A>,
-    ) -> Option<RecvMessage<A>> {
+    ) -> Result<Option<RecvMessage<A>>> {
         let class = message.class();
         let method = message.method();
         let transaction_id = message.transaction_id();
         if let Some((method, tx)) = self.transactions.remove(&(peer, transaction_id)) {
-            self.transporter.finish_transaction(peer, transaction_id);
+            track!(self.transporter.finish_transaction(peer, transaction_id))?;
             let result = track!(ErrorResponse::from_message(message))
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
                     Ok(m)
                 }).map(Err);
             tx.exit(result);
-            None
+            Ok(None)
         } else {
             let error =
                 track!(MessageErrorKind::UnexpectedResponse.cause("Unknown transaction ID")).into();
             let message =
                 RecvMessage::Invalid(InvalidMessage::new(method, class, transaction_id, error));
-            Some(message)
+            Ok(Some(message))
         }
     }
 }

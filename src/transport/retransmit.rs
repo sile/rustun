@@ -320,11 +320,15 @@ where
     A: Attribute,
     T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
-    fn finish_transaction(&mut self, peer: SocketAddr, transaction_id: TransactionId) {
+    fn finish_transaction(
+        &mut self,
+        peer: SocketAddr,
+        transaction_id: TransactionId,
+    ) -> Result<()> {
         if let Some(p) = self.peers.get_mut(&peer) {
             p.finish_transaction(transaction_id);
         }
-        // TODO: track!(self.handle_pending_request(peer))?;
+        track!(self.handle_pending_request(peer))
     }
 }
 
