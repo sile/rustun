@@ -102,7 +102,7 @@ impl From<Error> for MessageError {
 }
 impl From<fibers_transport::Error> for MessageError {
     fn from(f: fibers_transport::Error) -> Self {
-        let original_error_kind = f.kind().clone();
+        let original_error_kind = *f.kind();
         let kind = match original_error_kind {
             fibers_transport::ErrorKind::InvalidInput => MessageErrorKind::InvalidInput,
             _ => MessageErrorKind::Other,

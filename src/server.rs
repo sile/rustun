@@ -5,15 +5,12 @@
 //!
 //! [`Channel`]: ../channel/struct.Channel.html
 use bytecodec::marker::Never;
+use factory::DefaultFactory;
 use factory::Factory;
-use fibers::net::futures::{TcpListenerBind, UdpSocketBind};
-use fibers::net::streams::Incoming;
-use fibers::net::{TcpListener, UdpSocket};
 use fibers::sync::mpsc;
 use fibers::{BoxSpawn, Spawn};
-use fibers_transport::{TcpTransporter, UdpTransporter};
-use futures::future::Either;
-use futures::{self, Async, Future, Poll, Stream};
+use fibers_transport;
+use futures::{Async, Future, Poll, Stream};
 use std::fmt;
 use std::net::SocketAddr;
 use stun_codec::rfc5389;
@@ -30,21 +27,31 @@ pub const DEFAULT_PORT: u16 = 3478;
 /// The default TLS port for STUN.
 pub const DEFAULT_TLS_PORT: u16 = 5349;
 
+type UdpTransporter<A> = fibers_transport::UdpTransporter<MessageEncoder<A>, MessageDecoder<A>>;
+
 /// UDP based STUN server.
 #[derive(Debug)]
 #[must_use = "future do nothing unless polled"]
-pub struct UdpServer<H: HandleMessage>(UdpServerInner<H>);
+pub struct UdpServer<H: HandleMessage> {
+    driver: HandlerDriver<H, StunUdpTransporter<H::Attribute, UdpTransporter<H::Attribute>>>,
+}
 impl<H: HandleMessage> UdpServer<H> {
     /// Starts the server.
-    pub fn start<S>(spawner: S, bind_addr: SocketAddr, handler: H) -> Self
+    pub fn start<S>(
+        spawner: S,
+        bind_addr: SocketAddr,
+        handler: H,
+    ) -> impl Future<Item = Self, Error = Error>
     where
         S: Spawn + Send + 'static,
     {
-        UdpServer(UdpServerInner::Binding {
-            future: UdpSocket::bind(bind_addr),
-            spawner: Some(spawner.boxed()),
-            handler: Some(handler),
-        })
+        UdpTransporter::bind(bind_addr)
+            .map_err(|e| track!(Error::from(e)))
+            .map(move |transporter| {
+                let channel = Channel::new(StunUdpTransporter::new(transporter));
+                let driver = HandlerDriver::new(spawner.boxed(), handler, channel);
+                UdpServer { driver }
+            })
     }
 }
 impl<H: HandleMessage> Future for UdpServer<H> {
@@ -52,78 +59,29 @@ impl<H: HandleMessage> Future for UdpServer<H> {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.0.poll()
-    }
-}
-
-enum UdpServerInner<H: HandleMessage> {
-    Binding {
-        future: UdpSocketBind,
-        spawner: Option<BoxSpawn>,
-        handler: Option<H>,
-    },
-    Running {
-        driver: HandlerDriver<
-            H,
-            StunUdpTransporter<
-                H::Attribute,
-                UdpTransporter<MessageEncoder<H::Attribute>, MessageDecoder<H::Attribute>>,
-            >,
-        >,
-    },
-}
-impl<H: HandleMessage> Future for UdpServerInner<H> {
-    type Item = Never;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            let next = match self {
-                UdpServerInner::Binding {
-                    future,
-                    spawner,
-                    handler,
-                } => {
-                    if let Async::Ready(socket) = track!(future.poll().map_err(Error::from))? {
-                        let transporter =
-                            StunUdpTransporter::new(track!(UdpTransporter::from_socket(socket))?);
-                        let channel = Channel::new(transporter);
-                        let driver = HandlerDriver::new(
-                            spawner.take().expect("never fails"),
-                            handler.take().expect("never fails"),
-                            channel,
-                        );
-                        UdpServerInner::Running { driver }
-                    } else {
-                        break;
-                    }
-                }
-                UdpServerInner::Running { driver } => {
-                    if let Async::Ready(()) = track!(driver.poll())? {
-                        track_panic!(ErrorKind::Other, "UDP server unexpectedly terminated");
-                    } else {
-                        break;
-                    }
-                }
-            };
-            *self = next;
+        if let Async::Ready(()) = track!(self.driver.poll())? {
+            track_panic!(ErrorKind::Other, "STUN UDP server unexpectedly terminated");
         }
         Ok(Async::NotReady)
     }
 }
-impl<H: HandleMessage> fmt::Debug for UdpServerInner<H> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            UdpServerInner::Binding { .. } => write!(f, "Binding {{ .. }}"),
-            UdpServerInner::Running { .. } => write!(f, "Running {{ .. }}"),
-        }
-    }
-}
+
+type TcpListener<A> = fibers_transport::TcpListener<
+    DefaultFactory<MessageEncoder<A>>,
+    DefaultFactory<MessageDecoder<A>>,
+>;
 
 /// TCP based STUN server.
-#[derive(Debug)]
 #[must_use = "future do nothing unless polled"]
-pub struct TcpServer<S, H>(TcpServerInner<S, H>);
+pub struct TcpServer<S, H>
+where
+    H: Factory,
+    H::Item: HandleMessage,
+{
+    spawner: S,
+    handler_factory: H,
+    listener: TcpListener<<H::Item as HandleMessage>::Attribute>,
+}
 impl<S, H> TcpServer<S, H>
 where
     S: Spawn + Clone + Send + 'static,
@@ -131,13 +89,18 @@ where
     H::Item: HandleMessage,
 {
     /// Starts the server.
-    pub fn start(spawner: S, bind_addr: SocketAddr, handler_factory: H) -> Self {
-        let inner = TcpServerInner::Binding {
-            future: TcpListener::bind(bind_addr),
-            spawner: Some(spawner),
-            handler_factory: Some(handler_factory),
-        };
-        TcpServer(inner)
+    pub fn start(
+        spawner: S,
+        bind_addr: SocketAddr,
+        handler_factory: H,
+    ) -> impl Future<Item = Self, Error = Error> {
+        TcpListener::listen(bind_addr)
+            .map_err(|e| track!(Error::from(e)))
+            .map(move |listener| TcpServer {
+                spawner,
+                handler_factory,
+                listener,
+            })
     }
 }
 impl<S, H> Future for TcpServer<S, H>
@@ -152,102 +115,27 @@ where
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.0.poll()
-    }
-}
-
-// TODO: fibers_transport::TcpListener
-enum TcpServerInner<S, H> {
-    Binding {
-        future: TcpListenerBind,
-        spawner: Option<S>,
-        handler_factory: Option<H>,
-    },
-    Listening {
-        incoming: Incoming,
-        spawner: S,
-        handler_factory: H,
-    },
-}
-impl<S, H> Future for TcpServerInner<S, H>
-where
-    S: Spawn + Clone + Send + 'static,
-    H: Factory,
-    H::Item: HandleMessage + Send + 'static,
-    <<H::Item as HandleMessage>::Attribute as Attribute>::Decoder: Send + 'static,
-    <<H::Item as HandleMessage>::Attribute as Attribute>::Encoder: Send + 'static,
-{
-    type Item = Never;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            let next = match self {
-                TcpServerInner::Binding {
-                    future,
-                    spawner,
-                    handler_factory,
-                } => {
-                    if let Async::Ready(listener) = track!(future.poll().map_err(Error::from))? {
-                        TcpServerInner::Listening {
-                            incoming: listener.incoming(),
-                            spawner: spawner.take().expect("never fails"),
-                            handler_factory: handler_factory.take().expect("never fails"),
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                TcpServerInner::Listening {
-                    incoming,
-                    spawner,
-                    handler_factory,
-                } => {
-                    if let Async::Ready(client) = track!(incoming.poll().map_err(Error::from))? {
-                        if let Some((future, _)) = client {
-                            let boxed_spawner = spawner.clone().boxed();
-                            let mut handler = handler_factory.create();
-                            let future = future.then(move |result| match result {
-                                Err(e) => {
-                                    let e = track!(Error::from(e));
-                                    handler.handle_channel_error(&e);
-                                    Either::A(futures::failed(e))
-                                }
-                                Ok(stream) => {
-                                    let transporter =
-                                        match track!(TcpTransporter::from_stream(stream)) {
-                                            Ok(t) => t,
-                                            Err(e) => {
-                                                return Either::A(futures::failed(Error::from(e)))
-                                            }
-                                        };
-                                    let transporter =
-                                        StunTcpTransporter::<
-                                            TcpTransporter<MessageEncoder<_>, MessageDecoder<_>>,
-                                        >::new(transporter);
-                                    let channel = Channel::new(transporter);
-                                    Either::B(HandlerDriver::new(boxed_spawner, handler, channel))
-                                }
-                            });
-                            spawner.spawn(future.map_err(|_| ()));
-                        } else {
-                            track_panic!(ErrorKind::Other, "TCP server unexpectedly terminated");
-                        }
-                    }
-                    break;
-                }
-            };
-            *self = next;
+        while let Async::Ready(transporter) = track!(self.listener.poll())? {
+            if let Some(transporter) = transporter {
+                let transporter = StunTcpTransporter::new(transporter);
+                let channel = Channel::new(transporter);
+                let handler = self.handler_factory.create();
+                let future = HandlerDriver::new(self.spawner.clone().boxed(), handler, channel);
+                self.spawner.spawn(future.map_err(|_| ()));
+            } else {
+                track_panic!(ErrorKind::Other, "STUN TCP server unexpectedly terminated");
+            }
         }
         Ok(Async::NotReady)
     }
 }
-impl<S, H> fmt::Debug for TcpServerInner<S, H> {
+impl<S, H> fmt::Debug for TcpServer<S, H>
+where
+    H: Factory,
+    H::Item: HandleMessage,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            TcpServerInner::Binding { .. } => write!(f, "Binding {{ .. }}"),
-            TcpServerInner::Listening { .. } => write!(f, "Listening {{ .. }}"),
-        }
+        write!(f, "TcpServer {{ .. }}")
     }
 }
 
