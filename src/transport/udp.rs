@@ -1,7 +1,5 @@
 use fibers_timeout_queue::TimeoutQueue;
-use fibers_transport::{
-    FixedPeerTransporter, PeerAddr, PollRecv, PollSend, Result, Transport, UdpTransport,
-};
+use fibers_transport::{PollRecv, PollSend, Result, Transport, UdpTransport};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -206,17 +204,6 @@ where
         transaction_id: TransactionId,
     ) -> Result<()> {
         track!(self.inner.finish_transaction(peer, transaction_id))
-    }
-}
-impl<A, T, P> StunTransport<A> for FixedPeerTransporter<StunUdpTransporter<A, T>, P>
-where
-    A: Attribute,
-    T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
-    P: PeerAddr,
-{
-    fn finish_transaction(&mut self, _peer: &P, transaction_id: TransactionId) -> Result<()> {
-        let peer = self.interior_peer().clone();
-        track!(self.inner_mut().finish_transaction(&peer, transaction_id))
     }
 }
 

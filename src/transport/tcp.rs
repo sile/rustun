@@ -1,5 +1,4 @@
-use fibers_transport::{FixedPeerTransporter, PollRecv, PollSend, Result, TcpTransport, Transport};
-use std::net::SocketAddr;
+use fibers_transport::{PollRecv, PollSend, Result, TcpTransport, Transport};
 use stun_codec::{Attribute, DecodedMessage, Message, TransactionId};
 
 use super::StunTransport;
@@ -56,19 +55,6 @@ where
     T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
     fn finish_transaction(&mut self, _peer: &(), _transaction_id: TransactionId) -> Result<()> {
-        Ok(())
-    }
-}
-impl<A, T> StunTransport<A> for FixedPeerTransporter<StunTcpTransporter<T>, SocketAddr>
-where
-    A: Attribute,
-    T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
-{
-    fn finish_transaction(
-        &mut self,
-        _peer: &SocketAddr,
-        _transaction_id: TransactionId,
-    ) -> Result<()> {
         Ok(())
     }
 }
