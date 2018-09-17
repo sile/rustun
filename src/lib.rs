@@ -160,7 +160,7 @@ mod tests {
             .and_then(move |channel| {
                 let client = Client::new(&fibers_global::handle(), channel);
                 let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
-                client.call(server_addr, request)
+                client.call((), request)
             });
         let response = track!(fibers_global::execute(response))?;
         assert!(response.is_ok());

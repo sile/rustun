@@ -9,7 +9,7 @@ use factory::DefaultFactory;
 use factory::Factory;
 use fibers::sync::mpsc;
 use fibers::{BoxSpawn, Spawn};
-use fibers_transport::{self, UdpTransport};
+use fibers_transport::{self, FixedPeerTransporter, TcpTransport, UdpTransport};
 use futures::{Async, Future, Poll, Stream};
 use std::fmt;
 use std::net::SocketAddr;
@@ -131,7 +131,9 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         while let Async::Ready(transporter) = track!(self.listener.poll())? {
             if let Some(transporter) = transporter {
-                let transporter = StunTcpTransporter::new(transporter);
+                let peer_addr = transporter.peer_addr();
+                let transporter =
+                    FixedPeerTransporter::new(peer_addr, (), StunTcpTransporter::new(transporter));
                 let channel = Channel::new(transporter);
                 let handler = self.handler_factory.create();
                 let future = HandlerDriver::new(self.spawner.clone().boxed(), handler, channel);
@@ -227,7 +229,11 @@ pub trait HandleMessage {
 }
 
 #[derive(Debug)]
-struct HandlerDriver<H: HandleMessage, T> {
+struct HandlerDriver<H, T>
+where
+    H: HandleMessage,
+    T: StunTransport<H::Attribute, PeerAddr = SocketAddr>,
+{
     spawner: BoxSpawn,
     handler: H,
     channel: Channel<H::Attribute, T>,
@@ -237,7 +243,7 @@ struct HandlerDriver<H: HandleMessage, T> {
 impl<H, T> HandlerDriver<H, T>
 where
     H: HandleMessage,
-    T: StunTransport<H::Attribute>,
+    T: StunTransport<H::Attribute, PeerAddr = SocketAddr>,
 {
     fn new(spawner: BoxSpawn, handler: H, channel: Channel<H::Attribute, T>) -> Self {
         let (response_tx, response_rx) = mpsc::channel();
@@ -312,7 +318,7 @@ where
 impl<H, T> Future for HandlerDriver<H, T>
 where
     H: HandleMessage,
-    T: StunTransport<H::Attribute>,
+    T: StunTransport<H::Attribute, PeerAddr = SocketAddr>,
 {
     type Item = ();
     type Error = Error;

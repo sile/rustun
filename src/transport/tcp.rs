@@ -1,5 +1,4 @@
-use fibers_transport::{ErrorKind, PollRecv, PollSend, Result, TcpTransport, Transport};
-use futures::Async;
+use fibers_transport::{FixedPeerTransporter, PollRecv, PollSend, Result, TcpTransport, Transport};
 use std::net::SocketAddr;
 use stun_codec::{Attribute, DecodedMessage, Message, TransactionId};
 
@@ -35,17 +34,11 @@ where
     A: Attribute,
     T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
-    type PeerAddr = SocketAddr;
+    type PeerAddr = ();
     type SendItem = Message<A>;
     type RecvItem = DecodedMessage<A>;
 
-    fn start_send(&mut self, peer: Self::PeerAddr, item: Self::SendItem) -> Result<()> {
-        track_assert_eq!(
-            peer,
-            self.inner.peer_addr(),
-            ErrorKind::InvalidInput,
-            "Unexpected destination peer"
-        );
+    fn start_send(&mut self, (): Self::PeerAddr, item: Self::SendItem) -> Result<()> {
         track!(self.inner.start_send((), item))
     }
 
@@ -54,11 +47,7 @@ where
     }
 
     fn poll_recv(&mut self) -> PollRecv<(Self::PeerAddr, Self::RecvItem)> {
-        match track!(self.inner.poll_recv())? {
-            Async::NotReady => Ok(Async::NotReady),
-            Async::Ready(None) => Ok(Async::Ready(None)),
-            Async::Ready(Some((_, item))) => Ok(Async::Ready(Some((self.inner.peer_addr(), item)))),
-        }
+        track!(self.inner.poll_recv())
     }
 }
 impl<A, T> StunTransport<A> for StunTcpTransporter<T>
@@ -66,9 +55,18 @@ where
     A: Attribute,
     T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
 {
+    fn finish_transaction(&mut self, _peer: &(), _transaction_id: TransactionId) -> Result<()> {
+        Ok(())
+    }
+}
+impl<A, T> StunTransport<A> for FixedPeerTransporter<StunTcpTransporter<T>, SocketAddr>
+where
+    A: Attribute,
+    T: TcpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
+{
     fn finish_transaction(
         &mut self,
-        _peer: SocketAddr,
+        _peer: &SocketAddr,
         _transaction_id: TransactionId,
     ) -> Result<()> {
         Ok(())

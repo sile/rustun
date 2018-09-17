@@ -4,7 +4,7 @@ use fibers_timeout_queue::TimeoutQueue;
 use futures::{Async, Future, Poll};
 use std;
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::fmt;
 use std::time::Duration;
 use stun_codec::{Attribute, BrokenMessage, Message, MessageClass, Method, TransactionId};
 use trackable::error::ErrorKindExt;
@@ -76,12 +76,24 @@ impl Default for ChannelBuilder {
 }
 
 /// Channel for sending and receiving STUN messages.
-#[derive(Debug)]
-pub struct Channel<A, T> {
+pub struct Channel<A, T>
+where
+    A: Attribute,
+    T: StunTransport<A>,
+{
     transporter: T,
-    timeout_queue: TimeoutQueue<(SocketAddr, TransactionId)>,
+    timeout_queue: TimeoutQueue<(T::PeerAddr, TransactionId)>,
     request_timeout: Duration,
-    transactions: HashMap<(SocketAddr, TransactionId), (Method, Reply<A>)>,
+    transactions: HashMap<(T::PeerAddr, TransactionId), (Method, Reply<A>)>,
+}
+impl<A, T> fmt::Debug for Channel<A, T>
+where
+    A: Attribute,
+    T: StunTransport<A>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Channel {{ .. }}")
+    }
 }
 impl<A, T> Channel<A, T>
 where
@@ -100,35 +112,36 @@ where
     #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
     pub fn call(
         &mut self,
-        peer: SocketAddr,
+        peer: T::PeerAddr,
         request: Request<A>,
     ) -> impl Future<Item = Response<A>, Error = MessageError> {
         let id = request.transaction_id();
         let method = request.method();
         let (tx, rx) = oneshot::monitor();
-        if self.transactions.contains_key(&(peer, id)) {
-            let e = MessageErrorKind::InvalidInput.cause(format!(
-                "Transaction ID conflicts: peer={:?}, transaction_id={:?}",
-                peer, id
-            ));
+        if self.transactions.contains_key(&(peer.clone(), id)) {
+            let e = MessageErrorKind::InvalidInput
+                .cause(format!("Transaction ID conflicts: transaction_id={:?}", id));
             tx.exit(Err(track!(e).into()));
-        } else if let Err(e) = track!(self.transporter.start_send(peer, request.into_message())) {
+        } else if let Err(e) = track!(
+            self.transporter
+                .start_send(peer.clone(), request.into_message())
+        ) {
             tx.exit(Err(e.into()));
         } else {
-            self.transactions.insert((peer, id), (method, tx));
+            self.transactions.insert((peer.clone(), id), (method, tx));
             self.timeout_queue.push((peer, id), self.request_timeout);
         }
         rx.map_err(MessageError::from)
     }
 
     /// Sends the given indication message to the destination peer.
-    pub fn cast(&mut self, peer: SocketAddr, indication: Indication<A>) -> MessageResult<()> {
+    pub fn cast(&mut self, peer: T::PeerAddr, indication: Indication<A>) -> MessageResult<()> {
         track!(self.transporter.start_send(peer, indication.into_message()))?;
         Ok(())
     }
 
     /// Replies the given response message to the destination peer.
-    pub fn reply(&mut self, peer: SocketAddr, response: Response<A>) -> MessageResult<()> {
+    pub fn reply(&mut self, peer: T::PeerAddr, response: Response<A>) -> MessageResult<()> {
         let message = response
             .map(|m| m.into_message())
             .unwrap_or_else(|m| m.into_message());
@@ -159,7 +172,7 @@ where
     }
 
     /// Polls reception of a message from a peer.
-    pub fn poll_recv(&mut self) -> Poll<(SocketAddr, RecvMessage<A>), Error> {
+    pub fn poll_recv(&mut self) -> Poll<(T::PeerAddr, RecvMessage<A>), Error> {
         track!(self.handle_timeout())?;
         while let Async::Ready(item) = track!(self.transporter.poll_recv())? {
             if let Some((peer, message)) = item {
@@ -179,29 +192,29 @@ where
             .timeout_queue
             .filter_pop(|entry| transactions.contains_key(entry))
         {
-            if let Some((_, tx)) = transactions.remove(&(peer, id)) {
+            if let Some((_, tx)) = transactions.remove(&(peer.clone(), id)) {
                 let e = track!(MessageErrorKind::Timeout.error());
                 tx.exit(Err(e.into()));
             }
-            track!(self.transporter.finish_transaction(peer, id))?;
+            track!(self.transporter.finish_transaction(&peer, id))?;
         }
         Ok(())
     }
 
     fn handle_message(
         &mut self,
-        peer: SocketAddr,
+        peer: T::PeerAddr,
         message: std::result::Result<Message<A>, BrokenMessage>,
-    ) -> Result<Option<(SocketAddr, RecvMessage<A>)>> {
+    ) -> Result<Option<(T::PeerAddr, RecvMessage<A>)>> {
         let message = match message {
             Err(broken) => Some(self.handle_broken_message(&broken)),
             Ok(message) => match message.class() {
                 MessageClass::Indication => Some(self.handle_indication(message)),
                 MessageClass::Request => Some(self.handle_request(message)),
                 MessageClass::SuccessResponse => {
-                    track!(self.handle_success_response(peer, message))?
+                    track!(self.handle_success_response(&peer, message))?
                 }
-                MessageClass::ErrorResponse => track!(self.handle_error_response(peer, message))?,
+                MessageClass::ErrorResponse => track!(self.handle_error_response(&peer, message))?,
             },
         };
         Ok(message.map(|m| (peer, m)))
@@ -244,14 +257,14 @@ where
 
     fn handle_success_response(
         &mut self,
-        peer: SocketAddr,
+        peer: &T::PeerAddr,
         message: Message<A>,
     ) -> Result<Option<RecvMessage<A>>> {
         let class = message.class();
         let method = message.method();
         let transaction_id = message.transaction_id();
-        if let Some((method, tx)) = self.transactions.remove(&(peer, transaction_id)) {
-            track!(self.transporter.finish_transaction(peer, transaction_id))?;
+        if let Some((method, tx)) = self.transactions.remove(&(peer.clone(), transaction_id)) {
+            track!(self.transporter.finish_transaction(&peer, transaction_id))?;
             let result = track!(SuccessResponse::from_message(message))
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
@@ -270,14 +283,14 @@ where
 
     fn handle_error_response(
         &mut self,
-        peer: SocketAddr,
+        peer: &T::PeerAddr,
         message: Message<A>,
     ) -> Result<Option<RecvMessage<A>>> {
         let class = message.class();
         let method = message.method();
         let transaction_id = message.transaction_id();
-        if let Some((method, tx)) = self.transactions.remove(&(peer, transaction_id)) {
-            track!(self.transporter.finish_transaction(peer, transaction_id))?;
+        if let Some((method, tx)) = self.transactions.remove(&(peer.clone(), transaction_id)) {
+            track!(self.transporter.finish_transaction(&peer, transaction_id))?;
             let result = track!(ErrorResponse::from_message(message))
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);

@@ -8,7 +8,8 @@ use fibers::sync::{mpsc, oneshot};
 use fibers::Spawn;
 use futures::stream::Fuse;
 use futures::{Async, Future, IntoFuture, Poll, Stream};
-use std::net::SocketAddr;
+use std::fmt;
+use std::marker::PhantomData;
 use stun_codec::Attribute;
 
 use channel::Channel;
@@ -18,16 +19,24 @@ use {Error, Result};
 
 /// STUN client.
 #[derive(Debug, Clone)]
-pub struct Client<A> {
-    command_tx: mpsc::Sender<Command<A>>,
+pub struct Client<A, T>
+where
+    A: Attribute,
+    T: StunTransport<A>,
+{
+    command_tx: mpsc::Sender<Command<A, T::PeerAddr>>,
+    _phantom: PhantomData<T>,
 }
-impl<A> Client<A> {
+impl<A, T> Client<A, T>
+where
+    A: Attribute + Send + 'static,
+    T: StunTransport<A> + Send + 'static,
+    T::PeerAddr: Send + 'static,
+{
     /// Makes a new `Client` instance that uses the given channel for sending/receiving messages.
-    pub fn new<S, T>(spawner: &S, channel: Channel<A, T>) -> Self
+    pub fn new<S>(spawner: &S, channel: Channel<A, T>) -> Self
     where
         S: Spawn + Clone + Send + 'static,
-        A: Attribute + Send + 'static,
-        T: StunTransport<A> + Send + 'static,
     {
         let (command_tx, command_rx) = mpsc::channel();
         let channel_driver = ChannelDriver {
@@ -36,14 +45,17 @@ impl<A> Client<A> {
             command_rx: command_rx.fuse(),
         };
         spawner.spawn(channel_driver);
-        Client { command_tx }
+        Client {
+            command_tx,
+            _phantom: PhantomData,
+        }
     }
 
     /// Sends the given request message to the destination peer and
     /// returns a future that waits the corresponding response.
     pub fn call(
         &self,
-        peer: SocketAddr,
+        peer: T::PeerAddr,
         request: Request<A>,
     ) -> impl Future<Item = Response<A>, Error = Error> {
         let (tx, rx) = oneshot::monitor();
@@ -59,27 +71,33 @@ impl<A> Client<A> {
     ///
     /// If the channel being used by the client has dropped,
     /// this will return an `ErrorKind::Other` error.
-    pub fn cast(&self, peer: SocketAddr, indication: Indication<A>) -> Result<()> {
+    pub fn cast(&self, peer: T::PeerAddr, indication: Indication<A>) -> Result<()> {
         let command = Command::Cast(peer, indication);
         track!(self.command_tx.send(command).map_err(Error::from))
     }
 }
 
-#[derive(Debug)]
-enum Command<A> {
-    Call(
-        SocketAddr,
-        Request<A>,
-        oneshot::Monitored<Response<A>, Error>,
-    ),
-    Cast(SocketAddr, Indication<A>),
+enum Command<A, P> {
+    Call(P, Request<A>, oneshot::Monitored<Response<A>, Error>),
+    Cast(P, Indication<A>),
+}
+impl<A, P> fmt::Debug for Command<A, P> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Command::Call(..) => write!(f, "Call(..)"),
+            Command::Cast(..) => write!(f, "Cast(..)"),
+        }
+    }
 }
 
-#[derive(Debug)]
-struct ChannelDriver<S, A, T> {
+struct ChannelDriver<S, A, T>
+where
+    A: Attribute,
+    T: StunTransport<A>,
+{
     spawner: S,
     channel: Result<Channel<A, T>>,
-    command_rx: Fuse<mpsc::Receiver<Command<A>>>,
+    command_rx: Fuse<mpsc::Receiver<Command<A, T::PeerAddr>>>,
 }
 impl<S, A, T> ChannelDriver<S, A, T>
 where
@@ -87,7 +105,7 @@ where
     A: Attribute + Send + 'static,
     T: StunTransport<A> + Send + 'static,
 {
-    fn handle_command(&mut self, command: Command<A>) {
+    fn handle_command(&mut self, command: Command<A, T::PeerAddr>) {
         match command {
             Command::Cast(peer, indication) => {
                 if let Ok(channel) = self.channel.as_mut() {

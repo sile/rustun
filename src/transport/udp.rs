@@ -202,7 +202,7 @@ where
 {
     fn finish_transaction(
         &mut self,
-        peer: SocketAddr,
+        peer: &SocketAddr,
         transaction_id: TransactionId,
     ) -> Result<()> {
         track!(self.inner.finish_transaction(peer, transaction_id))
@@ -368,13 +368,13 @@ where
 {
     fn finish_transaction(
         &mut self,
-        peer: SocketAddr,
+        peer: &SocketAddr,
         transaction_id: TransactionId,
     ) -> Result<()> {
-        if let Some(p) = self.peers.get_mut(&peer) {
+        if let Some(p) = self.peers.get_mut(peer) {
             p.finish_transaction(transaction_id);
         }
-        track!(self.handle_pending_request(peer))
+        track!(self.handle_pending_request(peer.clone()))
     }
 }
 
