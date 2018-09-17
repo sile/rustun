@@ -1,7 +1,8 @@
 use fibers_timeout_queue::TimeoutQueue;
-use fibers_transport::{PollRecv, PollSend, Result, Transport, UdpTransport};
+use fibers_transport::{
+    FixedPeerTransporter, PeerAddr, PollRecv, PollSend, Result, Transport, UdpTransport,
+};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use stun_codec::{Attribute, DecodedMessage, Message, MessageClass, TransactionId};
@@ -123,7 +124,6 @@ impl StunUdpTransporterBuilder {
     {
         let inner = RetransmitTransporter {
             inner,
-            _phantom: PhantomData,
             timeout_queue: TimeoutQueue::new(),
             peers: HashMap::new(),
             rto: self.rto,
@@ -208,6 +208,17 @@ where
         track!(self.inner.finish_transaction(peer, transaction_id))
     }
 }
+impl<A, T, P> StunTransport<A> for FixedPeerTransporter<StunUdpTransporter<A, T>, P>
+where
+    A: Attribute,
+    T: UdpTransport<SendItem = Message<A>, RecvItem = DecodedMessage<A>>,
+    P: PeerAddr,
+{
+    fn finish_transaction(&mut self, _peer: &P, transaction_id: TransactionId) -> Result<()> {
+        let peer = self.interior_peer().clone();
+        track!(self.inner_mut().finish_transaction(&peer, transaction_id))
+    }
+}
 
 /// An implementation of [`StunTransport`] that retransmits request messages for improving reliability.
 ///
@@ -215,7 +226,6 @@ where
 #[derive(Debug)]
 struct RetransmitTransporter<A, T> {
     inner: T,
-    _phantom: PhantomData<A>,
     timeout_queue: TimeoutQueue<TimeoutEntry<A>>,
     peers: HashMap<SocketAddr, PeerState<A>>,
     rto: Duration,
