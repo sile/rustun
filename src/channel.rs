@@ -22,7 +22,6 @@ type Reply<A> = oneshot::Monitored<Response<A>, MessageError>;
 ///
 /// [`Channel`]: ./struct.Channel.html
 #[derive(Debug, Clone)]
-#[must_use = "streams do nothing unless polled"]
 pub struct ChannelBuilder {
     request_timeout: Duration,
 }
@@ -152,10 +151,14 @@ where
         self.transactions.len()
     }
 
+    /// Polls the transmission of the all outstanding messages in the channel have been completed.
+    ///
+    /// If it has been completed, this will return `Ok(Async::Ready(()))`.
     pub fn poll_send(&mut self) -> Poll<(), Error> {
         Ok(track!(self.transporter.poll_send())?)
     }
 
+    /// Polls reception of a message from a peer.
     pub fn poll_recv(&mut self) -> Poll<(SocketAddr, RecvMessage<A>), Error> {
         track!(self.handle_timeout())?;
         while let Async::Ready(item) = track!(self.transporter.poll_recv())? {

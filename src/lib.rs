@@ -65,7 +65,7 @@
 //! - [RFC 5389 - Session Traversal Utilities for NAT (STUN)][RFC 5389]
 //!
 //! [RFC 5389]: https://tools.ietf.org/html/rfc5389
-// #![warn(missing_docs)] // TODO
+#![warn(missing_docs)]
 extern crate bytecodec;
 extern crate factory;
 extern crate fibers;

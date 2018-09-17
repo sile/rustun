@@ -56,8 +56,12 @@ impl From<ErrorCode> for Error {
 }
 impl From<fibers_transport::Error> for Error {
     fn from(f: fibers_transport::Error) -> Self {
-        // TODO:
-        ErrorKind::Other.takes_over(f).into()
+        let original_error_kind = *f.kind();
+        let kind = match original_error_kind {
+            fibers_transport::ErrorKind::InvalidInput => ErrorKind::InvalidInput,
+            _ => ErrorKind::Other,
+        };
+        track!(kind.takes_over(f); original_error_kind).into()
     }
 }
 
