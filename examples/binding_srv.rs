@@ -18,13 +18,16 @@ fn main() -> Result<(), MainError> {
                 .takes_value(true)
                 .required(true)
                 .default_value("3478"),
-        )
-        .get_matches();
+        ).get_matches();
 
     let port = matches.value_of("PORT").unwrap();
     let addr = track_any_err!(format!("0.0.0.0:{}", port).parse())?;
 
-    let server = UdpServer::start(fibers_global::handle(), addr, BindingHandler);
+    let server = track!(fibers_global::execute(UdpServer::start(
+        fibers_global::handle(),
+        addr,
+        BindingHandler
+    )))?;
     track!(fibers_global::execute(server))?;
     Ok(())
 }

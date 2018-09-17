@@ -1,5 +1,6 @@
 extern crate clap;
 extern crate fibers_global;
+extern crate fibers_transport;
 extern crate futures;
 extern crate rustun;
 extern crate stun_codec;
@@ -7,13 +8,16 @@ extern crate stun_codec;
 extern crate trackable;
 
 use clap::{App, Arg};
+use fibers_transport::UdpTransporter;
 use futures::Future;
 use rustun::channel::Channel;
 use rustun::client::Client;
 use rustun::message::Request;
-use rustun::transport::{RetransmitTransporter, StunUdpTransporter, UdpTransporter};
+use rustun::transport::StunUdpTransporter;
+use rustun::Error;
 use std::net::ToSocketAddrs;
 use stun_codec::rfc5389;
+use stun_codec::{MessageDecoder, MessageEncoder};
 use trackable::error::Failed;
 use trackable::error::MainError;
 
@@ -27,8 +31,7 @@ fn main() -> Result<(), MainError> {
                 .takes_value(true)
                 .required(true)
                 .default_value("3478"),
-        )
-        .get_matches();
+        ).get_matches();
 
     let host = matches.value_of("HOST").unwrap();
     let port = matches.value_of("PORT").unwrap();
@@ -40,10 +43,11 @@ fn main() -> Result<(), MainError> {
     );
 
     let local_addr = "0.0.0.0:0".parse().unwrap();
-    let response = UdpTransporter::bind(local_addr)
-        .map(RetransmitTransporter::new)
+    let response = UdpTransporter::<MessageEncoder<_>, MessageDecoder<_>>::bind(local_addr)
+        .map_err(Error::from)
+        .map(StunUdpTransporter::new)
         .map(Channel::new)
-        .and_then(move |channel: Channel<_, StunUdpTransporter<_>>| {
+        .and_then(move |channel| {
             let client = Client::new(&fibers_global::handle(), channel);
             let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
             client.call(peer_addr, request)

@@ -18,27 +18,31 @@ Examples
 
 An example that issues a `BINDING` request:
 
+
 ```rust
+use fibers_transport::UdpTransporter;
 use futures::Future;
 use rustun::channel::Channel;
 use rustun::client::Client;
 use rustun::message::Request;
 use rustun::server::{BindingHandler, UdpServer};
-use rustun::transport::{RetransmitTransporter, UdpTransporter, StunUdpTransporter};
-use stun_codec::rfc5389;
+use rustun::transport::StunUdpTransporter;
+use rustun::Error;
+use stun_codec::{rfc5389, MessageDecoder, MessageEncoder};
 
-let server_addr = "127.0.0.1:3478".parse().unwrap();
-let client_addr = "127.0.0.1:0".parse().unwrap();
+let addr = "127.0.0.1:0".parse().unwrap();
 
 // Starts UDP server
-let server = UdpServer::start(fibers_global::handle(), server_addr, BindingHandler);
+let server = fibers_global::execute(UdpServer::start(fibers_global::handle(), addr, BindingHandler))?;
+let server_addr = server.local_addr();
 fibers_global::spawn(server.map(|_| ()).map_err(|e| panic!("{}", e)));
 
 // Sents BINDING request
-let response = UdpTransporter::bind(client_addr)
-    .map(RetransmitTransporter::new)
+let response = UdpTransporter::<MessageEncoder<_>, MessageDecoder<_>>::bind(addr)
+    .map_err(Error::from)
+    .map(StunUdpTransporter::new)
     .map(Channel::new)
-    .and_then(move |channel: Channel<_, StunUdpTransporter<_>>| {
+    .and_then(move |channel| {
         let client = Client::new(&fibers_global::handle(), channel);
         let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
         client.call(server_addr, request)

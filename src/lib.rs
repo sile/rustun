@@ -6,31 +6,35 @@
 //!
 //! ```
 //! # extern crate fibers_global;
+//! # extern crate fibers_transport;
 //! # extern crate futures;
 //! # extern crate rustun;
 //! # extern crate stun_codec;
 //! # extern crate trackable;
+//! use fibers_transport::UdpTransporter;
 //! use futures::Future;
 //! use rustun::channel::Channel;
 //! use rustun::client::Client;
 //! use rustun::message::Request;
 //! use rustun::server::{BindingHandler, UdpServer};
-//! use rustun::transport::{RetransmitTransporter, UdpTransporter, StunUdpTransporter};
-//! use stun_codec::rfc5389;
+//! use rustun::transport::StunUdpTransporter;
+//! use rustun::Error;
+//! use stun_codec::{rfc5389, MessageDecoder, MessageEncoder};
 //!
 //! # fn main() -> Result<(), trackable::error::MainError> {
-//! let server_addr = "127.0.0.1:3478".parse().unwrap();
-//! let client_addr = "127.0.0.1:0".parse().unwrap();
+//! let addr = "127.0.0.1:0".parse().unwrap();
 //!
 //! // Starts UDP server
-//! let server = UdpServer::start(fibers_global::handle(), server_addr, BindingHandler);
+//! let server = fibers_global::execute(UdpServer::start(fibers_global::handle(), addr, BindingHandler))?;
+//! let server_addr = server.local_addr();
 //! fibers_global::spawn(server.map(|_| ()).map_err(|e| panic!("{}", e)));
 //!
 //! // Sents BINDING request
-//! let response = UdpTransporter::bind(client_addr)
-//!     .map(RetransmitTransporter::new)
+//! let response = UdpTransporter::<MessageEncoder<_>, MessageDecoder<_>>::bind(addr)
+//!     .map_err(Error::from)
+//!     .map(StunUdpTransporter::new)
 //!     .map(Channel::new)
-//!     .and_then(move |channel: Channel<_, StunUdpTransporter<_>>| {
+//!     .and_then(move |channel| {
 //!         let client = Client::new(&fibers_global::handle(), channel);
 //!         let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
 //!         client.call(server_addr, request)
@@ -96,30 +100,37 @@ pub type Result<T> = std::result::Result<T, Error>;
 mod tests {
     use factory::DefaultFactory;
     use fibers_global;
+    use fibers_transport::{TcpTransporter, UdpTransporter};
     use futures::Future;
     use std::thread;
     use std::time::Duration;
     use stun_codec::rfc5389;
+    use stun_codec::{MessageDecoder, MessageEncoder};
     use trackable::error::MainError;
 
     use channel::Channel;
     use client::Client;
     use message::Request;
     use server::{BindingHandler, TcpServer, UdpServer};
-    use transport::{RetransmitTransporter, StunUdpTransporter, TcpTransporter, UdpTransporter};
+    use transport::{StunTcpTransporter, StunUdpTransporter};
+    use Error;
 
     #[test]
     fn basic_udp_test() -> Result<(), MainError> {
-        let server_addr = "127.0.0.1:3479".parse().unwrap();
-        let client_addr = "127.0.0.1:0".parse().unwrap();
-
-        let server = UdpServer::start(fibers_global::handle(), server_addr, BindingHandler);
+        let server = fibers_global::execute(UdpServer::start(
+            fibers_global::handle(),
+            "127.0.0.1:0".parse().unwrap(),
+            BindingHandler,
+        ))?;
+        let server_addr = server.local_addr();
         fibers_global::spawn(server.map(|_| ()).map_err(|e| panic!("{}", e)));
 
-        let response = UdpTransporter::bind(client_addr)
-            .map(RetransmitTransporter::new)
+        let client_addr = "127.0.0.1:0".parse().unwrap();
+        let response = UdpTransporter::<MessageEncoder<_>, MessageDecoder<_>>::bind(client_addr)
+            .map_err(Error::from)
+            .map(StunUdpTransporter::new)
             .map(Channel::new)
-            .and_then(move |channel: Channel<_, StunUdpTransporter<_>>| {
+            .and_then(move |channel| {
                 let client = Client::new(&fibers_global::handle(), channel);
                 let request = Request::<rfc5389::Attribute>::new(rfc5389::methods::BINDING);
                 client.call(server_addr, request)
@@ -132,17 +143,19 @@ mod tests {
 
     #[test]
     fn basic_tcp_test() -> Result<(), MainError> {
-        let server_addr = "127.0.0.1:3480".parse().unwrap();
-
-        let server = TcpServer::start(
+        let server = fibers_global::execute(TcpServer::start(
             fibers_global::handle(),
-            server_addr,
+            "127.0.0.1:0".parse().unwrap(),
             DefaultFactory::<BindingHandler>::new(),
-        );
+        ))?;
+        let server_addr = server.local_addr();
+
         fibers_global::spawn(server.map(|_| ()).map_err(|e| panic!("{}", e)));
         thread::sleep(Duration::from_millis(50));
 
-        let response = TcpTransporter::connect(server_addr)
+        let response = TcpTransporter::<MessageEncoder<_>, MessageDecoder<_>>::connect(server_addr)
+            .map_err(Error::from)
+            .map(StunTcpTransporter::new)
             .map(Channel::new)
             .and_then(move |channel| {
                 let client = Client::new(&fibers_global::handle(), channel);

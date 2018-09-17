@@ -9,7 +9,7 @@ use factory::DefaultFactory;
 use factory::Factory;
 use fibers::sync::mpsc;
 use fibers::{BoxSpawn, Spawn};
-use fibers_transport;
+use fibers_transport::{self, UdpTransport};
 use futures::{Async, Future, Poll, Stream};
 use std::fmt;
 use std::net::SocketAddr;
@@ -52,6 +52,15 @@ impl<H: HandleMessage> UdpServer<H> {
                 let driver = HandlerDriver::new(spawner.boxed(), handler, channel);
                 UdpServer { driver }
             })
+    }
+
+    /// Returns the address to which the server is bound.
+    pub fn local_addr(&self) -> SocketAddr {
+        self.driver
+            .channel
+            .transporter_ref()
+            .inner_ref()
+            .local_addr()
     }
 }
 impl<H: HandleMessage> Future for UdpServer<H> {
@@ -101,6 +110,11 @@ where
                 handler_factory,
                 listener,
             })
+    }
+
+    /// Returns the address to which the server is bound.
+    pub fn local_addr(&self) -> SocketAddr {
+        self.listener.local_addr()
     }
 }
 impl<S, H> Future for TcpServer<S, H>
