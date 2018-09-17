@@ -334,7 +334,8 @@ where
                     return Err(e);
                 }
                 Ok(Async::NotReady) => {}
-                Ok(Async::Ready((peer, message))) => {
+                Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
+                Ok(Async::Ready(Some((peer, message)))) => {
                     track!(self.handle_message(peer, message))?;
                     did_something = true;
                 }

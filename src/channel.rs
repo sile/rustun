@@ -14,7 +14,7 @@ use message::{
     Request, Response, SuccessResponse,
 };
 use transport::StunTransport;
-use {Error, ErrorKind, Result};
+use {Error, Result};
 
 type Reply<A> = oneshot::Monitored<Response<A>, MessageError>;
 
@@ -172,15 +172,15 @@ where
     }
 
     /// Polls reception of a message from a peer.
-    pub fn poll_recv(&mut self) -> Poll<(T::PeerAddr, RecvMessage<A>), Error> {
+    pub fn poll_recv(&mut self) -> Poll<Option<(T::PeerAddr, RecvMessage<A>)>, Error> {
         track!(self.handle_timeout())?;
         while let Async::Ready(item) = track!(self.transporter.poll_recv())? {
             if let Some((peer, message)) = item {
                 if let Some(item) = track!(self.handle_message(peer, message))? {
-                    return Ok(Async::Ready(item));
+                    return Ok(Async::Ready(Some(item)));
                 }
             } else {
-                track_panic!(ErrorKind::Other, "Transporter unexpectedly termination");
+                return Ok(Async::Ready(None));
             }
         }
         Ok(Async::NotReady)
