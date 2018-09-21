@@ -8,9 +8,8 @@ use stun_codec::AttributeType;
 use trackable::error::{self, ErrorKindExt, TrackableError};
 
 /// This crate specific `Error` type.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TrackableError)]
 pub struct Error(TrackableError<ErrorKind>);
-derive_traits_for_trackable_error_newtype!(Error, ErrorKind);
 impl From<MonitorError<Error>> for Error {
     fn from(f: MonitorError<Error>) -> Self {
         f.unwrap_or_else(|| {
