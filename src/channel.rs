@@ -172,6 +172,7 @@ where
     }
 
     /// Polls reception of a message from a peer.
+    #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
     pub fn poll_recv(&mut self) -> Poll<Option<(T::PeerAddr, RecvMessage<A>)>, Error> {
         track!(self.handle_timeout())?;
         while let Async::Ready(item) = track!(self.transporter.poll_recv())? {
