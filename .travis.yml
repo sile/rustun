@@ -10,10 +10,14 @@ matrix:
 
 env:
   global:
-  - RUSTFLAGS="-C link-dead-code"
+  - RUSTFLAGS="-C link-dead-code -D warnings"
+
+before_script:
+  - rustup component add clippy-preview
 
 script:
   - cargo test --verbose --all-features
+  - cargo clippy --verbose --all-features
 
 addons:
   apt:
