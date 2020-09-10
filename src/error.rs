@@ -81,9 +81,9 @@ pub enum ErrorKind {
 impl error::ErrorKind for ErrorKind {}
 
 /// Message level error.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TrackableError)]
+#[trackable(error_kind = "MessageErrorKind")]
 pub struct MessageError(TrackableError<MessageErrorKind>);
-derive_traits_for_trackable_error_newtype!(MessageError, MessageErrorKind);
 impl From<MonitorError<MessageError>> for MessageError {
     fn from(f: MonitorError<MessageError>) -> Self {
         f.unwrap_or_else(|| {
