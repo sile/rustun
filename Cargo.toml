@@ -11,8 +11,7 @@ categories = ["asynchronous", "network-programming"]
 license = "MIT"
 
 [badges]
-travis-ci = {repository = "sile/rustun"}
-codecov = {repository = "sile/rustun"}
+coveralls = {repository = "sile/rustun"}
 
 [dependencies]
 bytecodec = "0.4"
