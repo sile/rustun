@@ -289,7 +289,8 @@ where
                         .map(move |response| {
                             let _ = tx.send((peer, response));
                             ()
-                        }).map_err(|_| unreachable!()),
+                        })
+                        .map_err(|_| unreachable!()),
                 );
             }
         }
@@ -308,7 +309,8 @@ where
                         .map(move |response| {
                             let _ = tx.send((peer, response));
                             ()
-                        }).map_err(|_| unreachable!()),
+                        })
+                        .map_err(|_| unreachable!()),
                 );
             }
         }

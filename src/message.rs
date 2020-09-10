@@ -420,7 +420,8 @@ fn check_unknown_attributes<A: Attribute>(message: &Message<A>) -> MessageResult
             } else {
                 None
             }
-        }).collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
     track_assert!(
         required_unknowns.is_empty(),
         MessageErrorKind::UnknownAttributes(required_unknowns)

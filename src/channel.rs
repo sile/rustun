@@ -122,10 +122,10 @@ where
             let e = MessageErrorKind::InvalidInput
                 .cause(format!("Transaction ID conflicts: transaction_id={:?}", id));
             tx.exit(Err(track!(e).into()));
-        } else if let Err(e) = track!(
-            self.transporter
-                .start_send(peer.clone(), request.into_message())
-        ) {
+        } else if let Err(e) = track!(self
+            .transporter
+            .start_send(peer.clone(), request.into_message()))
+        {
             tx.exit(Err(e.into()));
         } else {
             self.transactions.insert((peer.clone(), id), (method, tx));
@@ -270,7 +270,8 @@ where
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
                     Ok(m)
-                }).map(Ok);
+                })
+                .map(Ok);
             tx.exit(result);
             Ok(None)
         } else {
@@ -296,7 +297,8 @@ where
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
                     Ok(m)
-                }).map(Err);
+                })
+                .map(Err);
             tx.exit(result);
             Ok(None)
         } else {

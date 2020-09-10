@@ -31,7 +31,8 @@ fn main() -> Result<(), MainError> {
                 .takes_value(true)
                 .required(true)
                 .default_value("3478"),
-        ).get_matches();
+        )
+        .get_matches();
 
     let host = matches.value_of("HOST").unwrap();
     let port = matches.value_of("PORT").unwrap();
