@@ -237,7 +237,7 @@ where
         self.peers.get_mut(&peer).expect("never fails")
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
+    #[allow(clippy::map_entry)]
     fn start_transaction(
         &mut self,
         peer: SocketAddr,
@@ -371,7 +371,7 @@ where
         if let Some(p) = self.peers.get_mut(peer) {
             p.finish_transaction(transaction_id);
         }
-        track!(self.handle_pending_request(peer.clone()))
+        track!(self.handle_pending_request(*peer))
     }
 }
 

@@ -109,7 +109,7 @@ where
 
     /// Sends the given request message to the destination peer and
     /// returns a future that waits the corresponding response.
-    #[cfg_attr(feature = "cargo-clippy", allow(map_entry))]
+    #[allow(clippy::map_entry)]
     pub fn call(
         &mut self,
         peer: T::PeerAddr,
@@ -172,7 +172,7 @@ where
     }
 
     /// Polls reception of a message from a peer.
-    #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
+    #[allow(clippy::type_complexity)]
     pub fn poll_recv(&mut self) -> Poll<Option<(T::PeerAddr, RecvMessage<A>)>, Error> {
         track!(self.handle_timeout())?;
         while let Async::Ready(item) = track!(self.transporter.poll_recv())? {

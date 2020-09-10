@@ -288,7 +288,6 @@ where
                     future
                         .map(move |response| {
                             let _ = tx.send((peer, response));
-                            ()
                         })
                         .map_err(|_| unreachable!()),
                 );
@@ -308,7 +307,6 @@ where
                     future
                         .map(move |response| {
                             let _ = tx.send((peer, response));
-                            ()
                         })
                         .map_err(|_| unreachable!()),
                 );
