@@ -161,13 +161,13 @@ pub enum Action<T> {
     Reply(T),
 
     /// Replies an response to the client in the future.
-    FutureReply(Box<Future<Item = T, Error = Never> + Send + 'static>),
+    FutureReply(Box<dyn Future<Item = T, Error = Never> + Send + 'static>),
 
     /// Does not reply to the client.
     NoReply,
 
     /// Does not reply to the client, but does something for handling the incoming message.
-    FutureNoReply(Box<Future<Item = (), Error = Never> + Send + 'static>),
+    FutureNoReply(Box<dyn Future<Item = (), Error = Never> + Send + 'static>),
 }
 impl<T: fmt::Debug> fmt::Debug for Action<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
