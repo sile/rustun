@@ -1,6 +1,6 @@
 [package]
 name = "rustun"
-version = "0.3.6"
+version = "0.3.7"
 authors = ["Takeru Ohta <phjgt308@gmail.com>"]
 description = "A library for implementing STUN server and client asynchronously"
 homepage = "https://github.com/sile/rustun"
