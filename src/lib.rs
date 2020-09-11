@@ -98,6 +98,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
+    use crate::channel::Channel;
+    use crate::client::Client;
+    use crate::message::Request;
+    use crate::server::{BindingHandler, TcpServer, UdpServer};
+    use crate::transport::{StunTcpTransporter, StunUdpTransporter};
+    use crate::Error;
     use factory::DefaultFactory;
     use fibers_global;
     use fibers_transport::{TcpTransporter, UdpTransporter};
@@ -107,13 +113,6 @@ mod tests {
     use stun_codec::rfc5389;
     use stun_codec::{MessageDecoder, MessageEncoder};
     use trackable::error::MainError;
-
-    use channel::Channel;
-    use client::Client;
-    use message::Request;
-    use server::{BindingHandler, TcpServer, UdpServer};
-    use transport::{StunTcpTransporter, StunUdpTransporter};
-    use Error;
 
     #[test]
     fn basic_udp_test() -> Result<(), MainError> {

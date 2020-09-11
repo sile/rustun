@@ -9,6 +9,7 @@ readme = "README.md"
 keywords = ["STUN", "asynchronous"]
 categories = ["asynchronous", "network-programming"]
 license = "MIT"
+edition = "2018"
 
 [badges]
 coveralls = {repository = "sile/rustun"}

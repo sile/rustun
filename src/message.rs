@@ -24,13 +24,11 @@
 //! > [RFC 5389 -- 3. Overview of Operation]
 //!
 //! [RFC 5389 -- 3. Overview of Operation]: https://tools.ietf.org/html/rfc5389#section-3
-use rand;
-use std;
 use stun_codec::convert::TryAsRef;
 use stun_codec::rfc5389::attributes::ErrorCode;
 use stun_codec::{Attribute, Message, MessageClass, Method, TransactionId};
 
-pub use error::{MessageError, MessageErrorKind};
+pub use crate::error::{MessageError, MessageErrorKind};
 
 /// A specialized `Result` type for message-level operations.
 pub type MessageResult<T> = Result<T, MessageError>;

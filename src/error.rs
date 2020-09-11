@@ -1,6 +1,4 @@
-use bytecodec;
 use fibers::sync::oneshot::MonitorError;
-use fibers_transport;
 use std::io;
 use std::sync::mpsc::SendError;
 use stun_codec::rfc5389::attributes::ErrorCode;

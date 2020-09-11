@@ -4,6 +4,10 @@
 //! If you want more elaborate one, please consider create your own client using [`Channel`] directly.
 //!
 //! [`Channel`]: ../channel/struct.Channel.html
+use crate::channel::Channel;
+use crate::message::{Indication, Request, Response};
+use crate::transport::StunTransport;
+use crate::{Error, Result};
 use fibers::sync::{mpsc, oneshot};
 use fibers::Spawn;
 use futures::stream::Fuse;
@@ -11,11 +15,6 @@ use futures::{Async, Future, IntoFuture, Poll, Stream};
 use std::fmt;
 use std::marker::PhantomData;
 use stun_codec::Attribute;
-
-use channel::Channel;
-use message::{Indication, Request, Response};
-use transport::StunTransport;
-use {Error, Result};
 
 /// STUN client.
 #[derive(Debug, Clone)]

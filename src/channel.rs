@@ -1,20 +1,18 @@
 //! Channel for sending and receiving STUN messages.
+use crate::message::{
+    ErrorResponse, Indication, InvalidMessage, MessageError, MessageErrorKind, MessageResult,
+    Request, Response, SuccessResponse,
+};
+use crate::transport::StunTransport;
+use crate::{Error, Result};
 use fibers::sync::oneshot;
 use fibers_timeout_queue::TimeoutQueue;
 use futures::{Async, Future, Poll};
-use std;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 use stun_codec::{Attribute, BrokenMessage, Message, MessageClass, Method, TransactionId};
 use trackable::error::ErrorKindExt;
-
-use message::{
-    ErrorResponse, Indication, InvalidMessage, MessageError, MessageErrorKind, MessageResult,
-    Request, Response, SuccessResponse,
-};
-use transport::StunTransport;
-use {Error, Result};
 
 type Reply<A> = oneshot::Monitored<Response<A>, MessageError>;
 

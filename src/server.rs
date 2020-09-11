@@ -4,6 +4,12 @@
 //! If you want more elaborate one, please consider create your own server using [`Channel`] directly.
 //!
 //! [`Channel`]: ../channel/struct.Channel.html
+use crate::channel::{Channel, RecvMessage};
+use crate::message::{
+    ErrorResponse, Indication, InvalidMessage, Request, Response, SuccessResponse,
+};
+use crate::transport::{StunTcpTransporter, StunTransport, StunUdpTransporter};
+use crate::{Error, ErrorKind, Result};
 use bytecodec::marker::Never;
 use factory::DefaultFactory;
 use factory::Factory;
@@ -15,11 +21,6 @@ use std::fmt;
 use std::net::SocketAddr;
 use stun_codec::rfc5389;
 use stun_codec::{Attribute, MessageDecoder, MessageEncoder};
-
-use channel::{Channel, RecvMessage};
-use message::{ErrorResponse, Indication, InvalidMessage, Request, Response, SuccessResponse};
-use transport::{StunTcpTransporter, StunTransport, StunUdpTransporter};
-use {Error, ErrorKind, Result};
 
 /// The default TCP and UDP port for STUN.
 pub const DEFAULT_PORT: u16 = 3478;
