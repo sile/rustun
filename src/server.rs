@@ -49,7 +49,7 @@ impl<H: HandleMessage> UdpServer<H> {
             .map_err(|e| track!(Error::from(e)))
             .map(move |transporter| {
                 let channel = Channel::new(StunUdpTransporter::new(transporter));
-                let driver = HandlerDriver::new(spawner.boxed(), handler, channel);
+                let driver = HandlerDriver::new(spawner.boxed(), handler, channel, true);
                 UdpServer { driver }
             })
     }
@@ -136,7 +136,8 @@ where
                     FixedPeerTransporter::new(peer_addr, (), StunTcpTransporter::new(transporter));
                 let channel = Channel::new(transporter);
                 let handler = self.handler_factory.create();
-                let future = HandlerDriver::new(self.spawner.clone().boxed(), handler, channel);
+                let future =
+                    HandlerDriver::new(self.spawner.clone().boxed(), handler, channel, false);
                 self.spawner.spawn(future.map_err(|_| ()));
             } else {
                 track_panic!(ErrorKind::Other, "STUN TCP server unexpectedly terminated");
@@ -239,13 +240,19 @@ where
     channel: Channel<H::Attribute, T>,
     response_tx: mpsc::Sender<(SocketAddr, Response<H::Attribute>)>,
     response_rx: mpsc::Receiver<(SocketAddr, Response<H::Attribute>)>,
+    recoverable_channel: bool,
 }
 impl<H, T> HandlerDriver<H, T>
 where
     H: HandleMessage,
     T: StunTransport<H::Attribute, PeerAddr = SocketAddr>,
 {
-    fn new(spawner: BoxSpawn, handler: H, channel: Channel<H::Attribute, T>) -> Self {
+    fn new(
+        spawner: BoxSpawn,
+        handler: H,
+        channel: Channel<H::Attribute, T>,
+        recoverable_channel: bool,
+    ) -> Self {
         let (response_tx, response_rx) = mpsc::channel();
         HandlerDriver {
             spawner,
@@ -253,6 +260,7 @@ where
             channel,
             response_tx,
             response_rx,
+            recoverable_channel,
         }
     }
 
@@ -331,7 +339,10 @@ where
             match track!(self.channel.poll_recv()) {
                 Err(e) => {
                     self.handler.handle_channel_error(&e);
-                    return Err(e);
+                    if !self.recoverable_channel {
+                        return Err(e);
+                    }
+                    did_something = true;
                 }
                 Ok(Async::NotReady) => {}
                 Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
@@ -375,5 +386,9 @@ impl HandleMessage for BindingHandler {
             let response = ErrorResponse::new(&request, rfc5389::errors::BadRequest.into());
             Action::Reply(Err(response))
         }
+    }
+
+    fn handle_channel_error(&mut self, error: &Error) {
+        eprintln!("[ERROR] {}", error);
     }
 }
