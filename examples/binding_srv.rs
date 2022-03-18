@@ -1,28 +1,19 @@
-extern crate clap;
-extern crate fibers_global;
-extern crate rustun;
-extern crate stun_codec;
 #[macro_use]
 extern crate trackable;
 
-use clap::{App, Arg};
+use clap::Parser;
 use rustun::server::{BindingHandler, UdpServer};
 use trackable::error::MainError;
 
-fn main() -> Result<(), MainError> {
-    let matches = App::new("binding_srv")
-        .arg(
-            Arg::with_name("PORT")
-                .short("p")
-                .long("port")
-                .takes_value(true)
-                .required(true)
-                .default_value("3478"),
-        )
-        .get_matches();
+#[derive(Debug, Parser)]
+struct Args {
+    #[clap(short, long, default_value_t = 3478)]
+    port: u16,
+}
 
-    let port = matches.value_of("PORT").unwrap();
-    let addr = track_any_err!(format!("0.0.0.0:{}", port).parse())?;
+fn main() -> Result<(), MainError> {
+    let args = Args::parse();
+    let addr = track_any_err!(format!("0.0.0.0:{}", args.port).parse())?;
 
     let server = track!(fibers_global::execute(UdpServer::start(
         fibers_global::handle(),

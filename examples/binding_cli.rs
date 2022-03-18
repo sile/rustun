@@ -1,13 +1,7 @@
-extern crate clap;
-extern crate fibers_global;
-extern crate fibers_transport;
-extern crate futures;
-extern crate rustun;
-extern crate stun_codec;
 #[macro_use]
 extern crate trackable;
 
-use clap::{App, Arg};
+use clap::Parser;
 use fibers_transport::UdpTransporter;
 use futures::Future;
 use rustun::channel::Channel;
@@ -21,23 +15,18 @@ use stun_codec::{MessageDecoder, MessageEncoder};
 use trackable::error::Failed;
 use trackable::error::MainError;
 
-fn main() -> Result<(), MainError> {
-    let matches = App::new("binding_cli")
-        .arg(Arg::with_name("HOST").index(1).required(true))
-        .arg(
-            Arg::with_name("PORT")
-                .short("p")
-                .long("port")
-                .takes_value(true)
-                .required(true)
-                .default_value("3478"),
-        )
-        .get_matches();
+#[derive(Debug, Parser)]
+struct Args {
+    host: String,
 
-    let host = matches.value_of("HOST").unwrap();
-    let port = matches.value_of("PORT").unwrap();
+    #[clap(short, long, default_value_t = 3478)]
+    port: usize,
+}
+
+fn main() -> Result<(), MainError> {
+    let args = Args::parse();
     let peer_addr = track_assert_some!(
-        track_any_err!(format!("{}:{}", host, port).to_socket_addrs())?
+        track_any_err!(format!("{}:{}", args.host, args.port).to_socket_addrs())?
             .filter(|x| x.is_ipv4())
             .nth(0),
         Failed
