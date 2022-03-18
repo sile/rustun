@@ -269,7 +269,7 @@ where
         let peers = &self.peers;
         self.timeout_queue.filter_pop(|entry| {
             if let TimeoutEntry::Retransmit { peer, request, .. } = entry {
-                peers.get(&peer).map_or(false, |p| {
+                peers.get(peer).map_or(false, |p| {
                     p.transactions.contains(&request.transaction_id())
                 })
             } else {
@@ -398,7 +398,6 @@ struct PeerState<A> {
     pending_requests: VecDeque<Message<A>>,
     waiting: bool,
     last_transaction_start_time: SystemTime,
-    current_rto: Duration,
     cached_rto: Duration,
 }
 impl<A: Attribute> PeerState<A> {
@@ -409,7 +408,6 @@ impl<A: Attribute> PeerState<A> {
             pending_requests: VecDeque::new(),
             waiting: false,
             last_transaction_start_time: UNIX_EPOCH,
-            current_rto: rto,
             cached_rto: rto,
         }
     }

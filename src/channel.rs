@@ -263,7 +263,7 @@ where
         let method = message.method();
         let transaction_id = message.transaction_id();
         if let Some((method, tx)) = self.transactions.remove(&(peer.clone(), transaction_id)) {
-            track!(self.transporter.finish_transaction(&peer, transaction_id))?;
+            track!(self.transporter.finish_transaction(peer, transaction_id))?;
             let result = track!(SuccessResponse::from_message(message))
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
@@ -290,7 +290,7 @@ where
         let method = message.method();
         let transaction_id = message.transaction_id();
         if let Some((method, tx)) = self.transactions.remove(&(peer.clone(), transaction_id)) {
-            track!(self.transporter.finish_transaction(&peer, transaction_id))?;
+            track!(self.transporter.finish_transaction(peer, transaction_id))?;
             let result = track!(ErrorResponse::from_message(message))
                 .and_then(|m| {
                     track_assert_eq!(m.method(), method, MessageErrorKind::UnexpectedResponse);
