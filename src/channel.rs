@@ -118,7 +118,7 @@ where
         let (tx, rx) = oneshot::monitor();
         if self.transactions.contains_key(&(peer.clone(), id)) {
             let e = MessageErrorKind::InvalidInput
-                .cause(format!("Transaction ID conflicts: transaction_id={:?}", id));
+                .cause(format!("Transaction ID conflicts: transaction_id={id:?}"));
             tx.exit(Err(track!(e).into()));
         } else if let Err(e) = track!(self
             .transporter

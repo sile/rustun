@@ -174,7 +174,7 @@ pub enum Action<T> {
 impl<T: fmt::Debug> fmt::Debug for Action<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Action::Reply(t) => write!(f, "Reply({:?})", t),
+            Action::Reply(t) => write!(f, "Reply({t:?})"),
             Action::FutureReply(_) => write!(f, "FutureReply(_)"),
             Action::NoReply => write!(f, "NoReply"),
             Action::FutureNoReply(_) => write!(f, "FutureNoReply(_)"),
@@ -390,6 +390,6 @@ impl HandleMessage for BindingHandler {
     }
 
     fn handle_channel_error(&mut self, error: &Error) {
-        eprintln!("[ERROR] {}", error);
+        eprintln!("[ERROR] {error}");
     }
 }

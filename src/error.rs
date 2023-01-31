@@ -47,7 +47,7 @@ impl From<MessageError> for Error {
 impl From<ErrorCode> for Error {
     fn from(f: ErrorCode) -> Self {
         ErrorKind::Other
-            .cause(format!("STUN error response: {:?}", f))
+            .cause(format!("STUN error response: {f:?}"))
             .into()
     }
 }
