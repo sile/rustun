@@ -70,16 +70,6 @@
 //!
 //! [RFC 5389]: https://tools.ietf.org/html/rfc5389
 #![warn(missing_docs)]
-extern crate bytecodec;
-extern crate factory;
-extern crate fibers;
-#[cfg(test)]
-extern crate fibers_global;
-extern crate fibers_timeout_queue;
-extern crate fibers_transport;
-extern crate futures;
-extern crate rand;
-extern crate stun_codec;
 #[macro_use]
 extern crate trackable;
 

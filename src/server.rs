@@ -15,7 +15,7 @@ use factory::DefaultFactory;
 use factory::Factory;
 use fibers::sync::mpsc;
 use fibers::{BoxSpawn, Spawn};
-use fibers_transport::{self, FixedPeerTransporter, TcpTransport, UdpTransport};
+use fibers_transport::{FixedPeerTransporter, TcpTransport, UdpTransport};
 use futures::{Async, Future, Poll, Stream};
 use std::fmt;
 use std::net::SocketAddr;
