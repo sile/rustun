@@ -331,7 +331,7 @@ impl<A: Attribute> ErrorResponse<A> {
             request.method(),
             request.transaction_id(),
         );
-        message.add_attribute(error.into());
+        message.add_attribute(error);
         ErrorResponse(message)
     }
 
