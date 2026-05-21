@@ -269,9 +269,9 @@ where
         let peers = &self.peers;
         self.timeout_queue.filter_pop(|entry| {
             if let TimeoutEntry::Retransmit { peer, request, .. } = entry {
-                peers.get(peer).is_some_and(|p| {
-                    p.transactions.contains(&request.transaction_id())
-                })
+                peers
+                    .get(peer)
+                    .is_some_and(|p| p.transactions.contains(&request.transaction_id()))
             } else {
                 true
             }

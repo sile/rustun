@@ -95,7 +95,7 @@ mod tests {
     use crate::transport::{StunTcpTransporter, StunUdpTransporter};
     use crate::Error;
     use factory::DefaultFactory;
-    
+
     use fibers_transport::{TcpTransporter, UdpTransporter};
     use futures::Future;
     use std::thread;
